@@ -1,0 +1,2103 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>前端可视化仪表盘 · 五合一</title>
+  <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+  <style>
+    /* ===== 全局基础样式 ===== */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; overflow: hidden; }
+
+    /* ===== 自定义滚动条 ===== */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.15); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.3); }
+
+    /* ===== 标签导航 ===== */
+    .tab-btn {
+      position: relative;
+      transition: all 0.3s ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .tab-btn::after {
+      content: '';
+      position: absolute;
+      bottom: 0; left: 50%;
+      transform: translateX(-50%);
+      width: 0; height: 2px;
+      border-radius: 1px;
+      background: linear-gradient(90deg, #06b6d4, #3b82f6);
+      transition: width 0.3s ease;
+    }
+    .tab-btn:hover { background: rgba(255,255,255,0.08); }
+    .tab-btn.active::after { width: 70%; }
+    .tab-btn.active { color: #06b6d4; }
+
+    /* ===== 标签面板 ===== */
+    .tab-panel {
+      display: none;
+      height: 100%;
+      animation: fadeIn 0.35s ease;
+    }
+    .tab-panel.active { display: flex; flex-direction: column; }
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+
+    /* ===== Module 1: Canvas Particles ===== */
+    #particles-canvas {
+      display: block;
+      width: 100%; height: 100%;
+      background: radial-gradient(ellipse at center, #0f172a 0%, #020617 100%);
+    }
+
+    /* ===== Module 2: Kanban ===== */
+    .kanban-column {
+      min-height: 120px;
+      transition: background 0.2s ease;
+    }
+    .kanban-column.drag-over { background: rgba(6, 182, 212, 0.12) !important; }
+    .kanban-card {
+      cursor: grab;
+      transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.2s ease;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .kanban-card:active { cursor: grabbing; }
+    .kanban-card.dragging { opacity: 0.4; transform: rotate(2deg) scale(0.97); }
+    .kanban-card.drag-over {
+      transform: translateY(6px);
+      box-shadow: 0 0 0 2px rgba(6,182,212,0.5);
+    }
+    .kanban-placeholder {
+      height: 0; overflow: hidden;
+      transition: height 0.2s ease;
+    }
+    .kanban-placeholder.show { height: 60px; margin: 6px 0; }
+
+    /* ===== Module 3: SVG Chart ===== */
+    #chart-svg {
+      display: block;
+      width: 100%; height: 100%;
+      background: #0f172a;
+    }
+
+    /* ===== Module 4: Pathfinding ===== */
+    .grid-cell {
+      width: 100%; height: 100%;
+      border: 1px solid rgba(255,255,255,0.06);
+      transition: background 0.12s ease, transform 0.1s ease;
+      cursor: pointer;
+    }
+    .grid-cell.wall { background: #334155; }
+    .grid-cell.start { background: #22c55e; }
+    .grid-cell.end   { background: #ef4444; }
+    .grid-cell.visited { background: rgba(59, 130, 246, 0.6); }
+    .grid-cell.path { background: #eab308; }
+    .grid-cell:hover { transform: scale(1.08); z-index: 2; }
+    .grid-cell.start:hover { background: #16a34a; }
+    .grid-cell.end:hover   { background: #dc2626; }
+    .grid-cell.wall:hover  { background: #475569; }
+
+    /* ===== Module 5: Video Player ===== */
+    .player-controls {
+      background: linear-gradient(0deg, rgba(0,0,0,0.95) 0%, rgba(0,0,0,0.7) 60%, transparent 100%);
+      transition: opacity 0.3s ease;
+    }
+    .player-controls.hidden-controls { opacity: 0; pointer-events: none; }
+    .progress-track {
+      position: relative;
+      cursor: pointer;
+    }
+    .progress-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #06b6d4, #3b82f6);
+      border-radius: inherit;
+      position: relative;
+      transition: width 0.05s linear;
+    }
+    .progress-thumb {
+      position: absolute;
+      right: -7px; top: 50%;
+      transform: translateY(-50%);
+      width: 14px; height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      box-shadow: 0 0 10px rgba(6,182,212,0.6);
+      opacity: 0;
+      transition: opacity 0.2s ease;
+    }
+    .progress-track:hover .progress-thumb,
+    .progress-track.dragging .progress-thumb { opacity: 1; }
+    .volume-slider { -webkit-appearance: none; appearance: none; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.2); outline: none; cursor: pointer; }
+    .volume-slider::-webkit-slider-thumb { -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #06b6d4; cursor: pointer; }
+    .volume-slider::-moz-range-thumb { width: 14px; height: 14px; border-radius: 50%; background: #fff; border: 2px solid #06b6d4; cursor: pointer; }
+
+    /* ===== Tooltip for progress preview ===== */
+    .preview-tooltip {
+      position: absolute;
+      bottom: 100%; left: 0;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.85);
+      color: #fff;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      white-space: nowrap;
+      pointer-events: none;
+      margin-bottom: 8px;
+      display: none;
+    }
+    .preview-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%; left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: rgba(0,0,0,0.85);
+    }
+
+    /* ===== 工具通用 ===== */
+    .glass-card {
+      background: rgba(255,255,255,0.05);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(255,255,255,0.08);
+    }
+
+    /* ===== 粒子信息面板 ===== */
+    .particle-info {
+      position: absolute;
+      top: 16px; left: 16px;
+      font-size: 13px;
+      color: rgba(255,255,255,0.6);
+      pointer-events: none;
+      font-variant-numeric: tabular-nums;
+    }
+  </style>
+</head>
+<body class="bg-gradient-to-br from-gray-950 via-slate-900 to-gray-950 text-white h-screen flex flex-col overflow-hidden">
+
+  <!-- ============================================================ -->
+  <!-- 顶部标题与标签导航栏                                             -->
+  <!-- ============================================================ -->
+  <header class="flex-shrink-0 border-b border-white/10 backdrop-blur-xl bg-black/30">
+    <div class="max-w-7xl mx-auto px-4 sm:px-6">
+      <div class="flex items-center justify-between h-14 sm:h-16">
+        <!-- 标题 -->
+        <h1 class="text-lg sm:text-xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent tracking-tight whitespace-nowrap">
+          ⚡ 前端可视化仪表盘
+        </h1>
+        <!-- 标签导航 -->
+        <nav class="flex items-center gap-1 sm:gap-2 overflow-x-auto" id="tabNav">
+          <button class="tab-btn active px-3 sm:px-4 py-2 text-sm font-medium rounded-lg text-white/70" data-tab="particles">
+            <span class="hidden sm:inline">粒子物理</span><span class="sm:hidden">粒子</span>
+          </button>
+          <button class="tab-btn px-3 sm:px-4 py-2 text-sm font-medium rounded-lg text-white/70" data-tab="kanban">
+            <span class="hidden sm:inline">拖拽看板</span><span class="sm:hidden">看板</span>
+          </button>
+          <button class="tab-btn px-3 sm:px-4 py-2 text-sm font-medium rounded-lg text-white/70" data-tab="chart">
+            <span class="hidden sm:inline">实时折线</span><span class="sm:hidden">折线</span>
+          </button>
+          <button class="tab-btn px-3 sm:px-4 py-2 text-sm font-medium rounded-lg text-white/70" data-tab="pathfinding">
+            <span class="hidden sm:inline">寻路迷宫</span><span class="sm:hidden">迷宫</span>
+          </button>
+          <button class="tab-btn px-3 sm:px-4 py-2 text-sm font-medium rounded-lg text-white/70" data-tab="player">
+            <span class="hidden sm:inline">视频播放器</span><span class="sm:hidden">视频</span>
+          </button>
+        </nav>
+      </div>
+    </div>
+  </header>
+
+  <!-- ============================================================ -->
+  <!-- 主内容区 — 五个标签面板                                         -->
+  <!-- ============================================================ -->
+  <main class="flex-1 overflow-hidden relative">
+    <div class="h-full w-full">
+
+      <!-- ============ Panel 1: Canvas 粒子物理 ============ -->
+      <div id="panel-particles" class="tab-panel active relative">
+        <div class="flex-1 relative">
+          <canvas id="particles-canvas"></canvas>
+          <div class="particle-info" id="particleInfo">
+            <div>粒子: <span id="particleCount">0</span></div>
+            <div>FPS: <span id="particleFps">0</span></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ Panel 2: 拖拽看板 ============ -->
+      <div id="panel-kanban" class="tab-panel">
+        <div class="flex-1 flex flex-col p-4 sm:p-6 gap-4 overflow-hidden">
+          <!-- 工具栏 -->
+          <div class="flex items-center justify-between flex-shrink-0">
+            <h2 class="text-lg font-semibold text-white/80">任务看板</h2>
+            <button id="kanbanAddBtn" class="px-4 py-1.5 text-sm rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all cursor-pointer">
+              + 添加卡片
+            </button>
+          </div>
+          <!-- 三列看板 -->
+          <div class="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4 min-h-0 overflow-hidden">
+            <!-- 待办 -->
+            <div class="flex flex-col bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+              <div class="flex-shrink-0 px-4 py-3 border-b border-white/10 bg-white/5">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+                  <span class="font-medium text-sm text-white/80">待办</span>
+                  <span class="ml-auto text-xs text-white/40" id="todoCount">0</span>
+                </div>
+              </div>
+              <div class="kanban-column flex-1 p-3 space-y-2 overflow-y-auto" data-column="todo" id="kanbanTodo"></div>
+            </div>
+            <!-- 进行中 -->
+            <div class="flex flex-col bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+              <div class="flex-shrink-0 px-4 py-3 border-b border-white/10 bg-white/5">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-blue-400"></span>
+                  <span class="font-medium text-sm text-white/80">进行中</span>
+                  <span class="ml-auto text-xs text-white/40" id="doingCount">0</span>
+                </div>
+              </div>
+              <div class="kanban-column flex-1 p-3 space-y-2 overflow-y-auto" data-column="doing" id="kanbanDoing"></div>
+            </div>
+            <!-- 已完成 -->
+            <div class="flex flex-col bg-white/5 rounded-xl border border-white/10 overflow-hidden">
+              <div class="flex-shrink-0 px-4 py-3 border-b border-white/10 bg-white/5">
+                <div class="flex items-center gap-2">
+                  <span class="w-2.5 h-2.5 rounded-full bg-green-400"></span>
+                  <span class="font-medium text-sm text-white/80">已完成</span>
+                  <span class="ml-auto text-xs text-white/40" id="doneCount">0</span>
+                </div>
+              </div>
+              <div class="kanban-column flex-1 p-3 space-y-2 overflow-y-auto" data-column="done" id="kanbanDone"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ Panel 3: SVG 实时折线 ============ -->
+      <div id="panel-chart" class="tab-panel">
+        <div class="flex-1 flex flex-col p-4 sm:p-6 gap-3">
+          <div class="flex items-center justify-between flex-shrink-0">
+            <div>
+              <h2 class="text-lg font-semibold text-white/80">实时行情折线</h2>
+              <p class="text-xs text-white/40 mt-0.5">模拟股票数据 · 每 100ms 推送 · 显示最近 50 点</p>
+            </div>
+            <div class="flex items-center gap-4 text-xs text-white/50 font-mono tabular-nums">
+              <span>当前: <span id="chartCurrent">--</span></span>
+              <span>最高: <span id="chartMax">--</span></span>
+              <span>最低: <span id="chartMin">--</span></span>
+            </div>
+          </div>
+          <div class="flex-1 min-h-0 relative">
+            <!-- Y 轴刻度 -->
+            <div class="absolute left-0 top-0 bottom-6 w-10 flex flex-col justify-between text-[10px] text-white/30 font-mono pointer-events-none select-none" id="chartYLabels">
+              <span>100</span>
+              <span>75</span>
+              <span>50</span>
+              <span>25</span>
+              <span>0</span>
+            </div>
+            <svg id="chart-svg" class="pl-10" preserveAspectRatio="none"></svg>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ Panel 4: A* 寻路迷宫 ============ -->
+      <div id="panel-pathfinding" class="tab-panel">
+        <div class="flex-1 flex flex-col p-4 sm:p-6 gap-4 overflow-hidden">
+          <!-- 工具栏 -->
+          <div class="flex items-center flex-wrap gap-2 flex-shrink-0">
+            <span class="text-sm font-medium text-white/70 mr-1">模式:</span>
+            <button class="mode-btn px-3 py-1 text-xs rounded-lg border transition-all cursor-pointer" data-mode="start" style="border-color:rgba(34,197,94,0.5);color:#22c55e;background:rgba(34,197,94,0.1);">起点</button>
+            <button class="mode-btn px-3 py-1 text-xs rounded-lg border transition-all cursor-pointer" data-mode="end" style="border-color:rgba(239,68,68,0.5);color:#ef4444;background:rgba(239,68,68,0.1);">终点</button>
+            <button class="mode-btn px-3 py-1 text-xs rounded-lg border transition-all cursor-pointer active-mode" data-mode="wall" style="border-color:rgba(148,163,184,0.5);color:#94a3b8;background:rgba(148,163,184,0.15);">墙</button>
+            <button class="mode-btn px-3 py-1 text-xs rounded-lg border transition-all cursor-pointer" data-mode="erase" style="border-color:rgba(255,255,255,0.2);color:#fff;background:rgba(255,255,255,0.05);">擦除</button>
+            <span class="w-px h-5 bg-white/10 mx-1"></span>
+            <button id="pfStartBtn" class="px-4 py-1.5 text-xs rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all cursor-pointer">开始寻路</button>
+            <button id="pfClearBtn" class="px-4 py-1.5 text-xs rounded-lg bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all cursor-pointer">清除路径</button>
+            <button id="pfResetBtn" class="px-4 py-1.5 text-xs rounded-lg bg-white/5 text-white/60 border border-white/10 hover:bg-white/10 transition-all cursor-pointer">重置网格</button>
+            <span id="pfStatus" class="ml-auto text-xs text-white/40">就绪</span>
+          </div>
+          <!-- 网格容器 -->
+          <div class="flex-1 min-h-0 flex items-center justify-center">
+            <div id="pfGrid" class="grid gap-0" style="width:min(100%,600px);aspect-ratio:1/1;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ============ Panel 5: 自定义视频播放器 ============ -->
+      <div id="panel-player" class="tab-panel">
+        <div class="flex-1 flex flex-col bg-black relative" id="playerContainer">
+          <!-- 视频元素 -->
+          <video id="playerVideo" class="flex-1 w-full h-full object-contain" preload="auto" playsinline>
+            <source src="../task-list/test.mp4" type="video/mp4">
+          </video>
+          <!-- 控制栏 -->
+          <div class="player-controls absolute bottom-0 left-0 right-0 px-4 pt-10 pb-3 flex flex-col gap-2" id="playerControls">
+            <!-- 进度条 -->
+            <div class="progress-track relative h-2 rounded-full bg-white/20 group" id="progressTrack">
+              <div class="preview-tooltip" id="previewTooltip">00:00</div>
+              <div class="progress-fill" id="progressFill" style="width:0%">
+                <div class="progress-thumb"></div>
+              </div>
+            </div>
+            <!-- 按钮组 -->
+            <div class="flex items-center gap-3 text-white text-sm">
+              <!-- 播放/暂停 -->
+              <button id="playBtn" class="w-8 h-8 flex items-center justify-center rounded-full hover:bg-white/10 transition-all cursor-pointer flex-shrink-0" title="播放/暂停">
+                <svg id="playIcon" class="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+              </button>
+              <!-- 时间 -->
+              <span class="text-xs font-mono tabular-nums text-white/70 whitespace-nowrap">
+                <span id="currentTime">00:00</span> / <span id="totalTime">00:00</span>
+              </span>
+              <!-- 音量 -->
+              <div class="flex items-center gap-1.5 ml-1">
+                <svg class="w-4 h-4 text-white/60" fill="currentColor" viewBox="0 0 24 24"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8.5v7a4.49 4.49 0 0 0 2.5-3.5zm-4 7h.01l.01-.01v.01z"/></svg>
+                <input type="range" id="volumeSlider" class="volume-slider w-16 sm:w-24" min="0" max="1" step="0.05" value="1">
+              </div>
+              <div class="ml-auto flex items-center gap-2">
+                <!-- 速度 -->
+                <select id="speedSelect" class="bg-transparent text-xs text-white/60 border border-white/10 rounded px-1 py-0.5 cursor-pointer outline-none">
+                  <option value="0.5">0.5x</option>
+                  <option value="1" selected>1x</option>
+                  <option value="1.5">1.5x</option>
+                  <option value="2">2x</option>
+                </select>
+                <!-- 全屏 -->
+                <button id="fullscreenBtn" class="w-7 h-7 flex items-center justify-center rounded hover:bg-white/10 transition-all cursor-pointer" title="全屏">
+                  <svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>
+                </button>
+              </div>
+            </div>
+          </div>
+          <!-- 中央大播放按钮（视频暂停时显示） -->
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none" id="bigPlayOverlay">
+            <button id="bigPlayBtn" class="w-16 h-16 sm:w-20 sm:h-20 rounded-full bg-cyan-500/20 backdrop-blur-xl border border-white/20 flex items-center justify-center pointer-events-auto cursor-pointer hover:bg-cyan-500/30 transition-all" title="播放">
+              <svg class="w-8 h-8 sm:w-10 sm:h-10 text-white ml-1" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <!-- ============================================================ -->
+  <!-- JavaScript — 全部内联                                           -->
+  <!-- ============================================================ -->
+  <script>
+  (function() {
+    'use strict';
+
+    /* ==============================================================
+     * 模块生命周期管理器
+     * 每个模块暴露 { init, activate, deactivate } 三个方法
+     * ============================================================== */
+    const ModuleManager = {
+      modules: {},
+      activeName: null,
+
+      /** 注册一个模块 */
+      register(name, module) {
+        this.modules[name] = module;
+      },
+
+      /** 切换到指定标签 */
+      switchTo(name) {
+        if (this.activeName === name) return;
+        // 停用当前模块
+        if (this.activeName && this.modules[this.activeName]) {
+          this.modules[this.activeName].deactivate();
+        }
+        // 切换面板可见性
+        document.querySelectorAll('.tab-panel').forEach(el => el.classList.remove('active'));
+        const panel = document.getElementById('panel-' + name);
+        if (panel) panel.classList.add('active');
+        // 更新标签高亮
+        document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+        const tabBtn = document.querySelector(`.tab-btn[data-tab="${name}"]`);
+        if (tabBtn) tabBtn.classList.add('active');
+        // 激活新模块
+        this.activeName = name;
+        if (this.modules[name]) {
+          this.modules[name].activate();
+        }
+      },
+
+      /** 初始化所有模块 */
+      init() {
+        const names = Object.keys(this.modules);
+        names.forEach(name => {
+          if (this.modules[name].init) this.modules[name].init();
+        });
+        // 激活第一个
+        if (names.length > 0) this.switchTo(names[0]);
+      }
+    };
+
+    /* ==============================================================
+     * 工具函数
+     * ============================================================== */
+    function sleep(ms) {
+      return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    function formatTime(seconds) {
+      if (!isFinite(seconds) || seconds < 0) return '00:00';
+      const m = Math.floor(seconds / 60);
+      const s = Math.floor(seconds % 60);
+      return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+
+    function generateId() {
+      return Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    }
+
+    /* ==============================================================
+     * Module 1: Canvas 粒子物理（引力弹球模拟器）
+     * - 500 粒子 · 中心引力 · 弹性碰撞
+     * - Spatial Hash Grid 空间划分优化
+     * - Retina 适配 · 窗口自适应
+     * ============================================================== */
+    (function() {
+      const MODULE_NAME = 'particles';
+
+      // --- DOM 引用 ---
+      const canvas = document.getElementById('particles-canvas');
+      const infoFps = document.getElementById('particleFps');
+      const infoCount = document.getElementById('particleCount');
+
+      let ctx = null;
+      let W = 0, H = 0;          // 逻辑尺寸（CSS 像素）
+      let dpr = 1;
+      let particles = [];
+      let animId = null;
+      let fpsCounter = 0;
+      let fpsTimer = 0;
+      let currentFps = 0;
+
+      // 空间哈希网格
+      let spatialHash = null;
+      const CELL_SIZE = 28;       // 网格单元大小
+
+      // 物理参数
+      const GRAVITY_STRENGTH = 1800;
+      const PARTICLE_COUNT = 500;
+      const MIN_RADIUS = 2.5;
+      const MAX_RADIUS = 5.5;
+
+      /* ---------- 粒子类 ---------- */
+      class Particle {
+        constructor() {
+          this.radius = MIN_RADIUS + Math.random() * (MAX_RADIUS - MIN_RADIUS);
+          this.x = Math.random() * W;
+          this.y = Math.random() * H;
+          this.vx = (Math.random() - 0.5) * 2;
+          this.vy = (Math.random() - 0.5) * 2;
+          this.mass = this.radius * this.radius;   // 质量 = r²
+          this.hue = Math.random() * 360;
+          this.saturation = 70 + Math.random() * 30;
+          this.lightness = 55 + Math.random() * 25;
+          this.color = `hsl(${this.hue}, ${this.saturation}%, ${this.lightness}%)`;
+          this.glowColor = `hsla(${this.hue}, 90%, 70%, 0.25)`;
+        }
+      }
+
+      /* ---------- 空间哈希网格 ---------- */
+      class SpatialHashGrid {
+        constructor(cellSize) {
+          this.cellSize = cellSize;
+          this.grid = new Map();
+        }
+
+        _key(x, y) {
+          const cx = Math.floor(x / this.cellSize);
+          const cy = Math.floor(y / this.cellSize);
+          return cx + ',' + cy;
+        }
+
+        clear() {
+          this.grid.clear();
+        }
+
+        insert(p) {
+          const k = this._key(p.x, p.y);
+          if (!this.grid.has(k)) this.grid.set(k, []);
+          this.grid.get(k).push(p);
+        }
+
+        /** 获取某个粒子所在 cell 及其周围 8 邻域的所有粒子 */
+        getNearby(p) {
+          const result = [];
+          const cx = Math.floor(p.x / this.cellSize);
+          const cy = Math.floor(p.y / this.cellSize);
+          for (let dx = -1; dx <= 1; dx++) {
+            for (let dy = -1; dy <= 1; dy++) {
+              const k = (cx + dx) + ',' + (cy + dy);
+              if (this.grid.has(k)) {
+                const bucket = this.grid.get(k);
+                for (let i = 0; i < bucket.length; i++) {
+                  result.push(bucket[i]);
+                }
+              }
+            }
+          }
+          return result;
+        }
+      }
+
+      /* ---------- 初始化粒子 ---------- */
+      function initParticles() {
+        particles = [];
+        for (let i = 0; i < PARTICLE_COUNT; i++) {
+          particles.push(new Particle());
+        }
+        if (infoCount) infoCount.textContent = particles.length;
+      }
+
+      /* ---------- Canvas 尺寸调整 ---------- */
+      function resizeCanvas() {
+        const parent = canvas.parentElement;
+        if (!parent) return;
+        dpr = window.devicePixelRatio || 1;
+        W = parent.clientWidth;
+        H = parent.clientHeight;
+        // 设置物理像素尺寸
+        canvas.width = W * dpr;
+        canvas.height = H * dpr;
+        canvas.style.width = W + 'px';
+        canvas.style.height = H + 'px';
+        ctx = canvas.getContext('2d');
+        ctx.scale(dpr, dpr);
+        // 粒子边界约束
+        if (particles.length === 0) initParticles();
+      }
+
+      /* ---------- 物理更新 ---------- */
+      function updatePhysics() {
+        const cx = W / 2;   // 引力源中心
+        const cy = H / 2;
+
+        // 1) 计算引力加速度 + 更新位置
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          const dx = cx - p.x;
+          const dy = cy - p.y;
+          const distSq = dx * dx + dy * dy;
+          const dist = Math.sqrt(distSq);
+
+          // 引力: F = G * M / r², 方向指向中心
+          if (dist > 0.5) {
+            const force = GRAVITY_STRENGTH / (distSq + 10);
+            const fx = (dx / dist) * force;
+            const fy = (dy / dist) * force;
+            p.vx += fx;
+            p.vy += fy;
+          }
+
+          // 阻力（防止速度无限增长）
+          p.vx *= 0.995;
+          p.vy *= 0.995;
+
+          // 限制最大速度
+          const speed = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
+          if (speed > 8) {
+            p.vx = (p.vx / speed) * 8;
+            p.vy = (p.vy / speed) * 8;
+          }
+
+          // 更新位置
+          p.x += p.vx;
+          p.y += p.vy;
+
+          // 边界反弹（带能量损耗）
+          if (p.x - p.radius < 0) { p.x = p.radius; p.vx = -p.vx * 0.85; }
+          if (p.x + p.radius > W) { p.x = W - p.radius; p.vx = -p.vx * 0.85; }
+          if (p.y - p.radius < 0) { p.y = p.radius; p.vy = -p.vy * 0.85; }
+          if (p.y + p.radius > H) { p.y = H - p.radius; p.vy = -p.vy * 0.85; }
+        }
+
+        // 2) Spatial Hash 碰撞检测
+        spatialHash.clear();
+        for (let i = 0; i < particles.length; i++) {
+          spatialHash.insert(particles[i]);
+        }
+
+        for (let i = 0; i < particles.length; i++) {
+          const a = particles[i];
+          const neighbors = spatialHash.getNearby(a);
+          for (let j = 0; j < neighbors.length; j++) {
+            const b = neighbors[j];
+            // 防止同粒子对重复处理及自身比较
+            if (a === b) continue;
+            // 只比较一次（用内存地址判断，但 neighbors 可能包含 a 自身及重复对）
+            // 用 ID 或直接比较地址：由于未排序，用 a 的索引 < b 的索引来保证单向
+            // 但 neighbors 可能来自不同 cell 产生重复，这里用"指针较小"策略
+            if (a._hashChecked && a._hashChecked.has(b)) continue;
+            if (!a._hashChecked) a._hashChecked = new Set();
+            if (!b._hashChecked) b._hashChecked = new Set();
+            a._hashChecked.add(b);
+            b._hashChecked.add(a);
+
+            resolveCollision(a, b);
+          }
+        }
+
+        // 清理 _hashChecked
+        for (let i = 0; i < particles.length; i++) {
+          particles[i]._hashChecked = null;
+        }
+      }
+
+      /* ---------- 弹性碰撞 + 重叠修正 ---------- */
+      function resolveCollision(a, b) {
+        const dx = b.x - a.x;
+        const dy = b.y - a.y;
+        const distSq = dx * dx + dy * dy;
+        const minDist = a.radius + b.radius;
+
+        if (distSq >= minDist * minDist || distSq < 0.0001) return;
+
+        const dist = Math.sqrt(distSq);
+        const nx = dx / dist;
+        const ny = dy / dist;
+
+        // ---- 重叠修正（Position Correction） ----
+        const overlap = minDist - dist;
+        const totalMass = a.mass + b.mass;
+        const ratioA = b.mass / totalMass;
+        const ratioB = a.mass / totalMass;
+        a.x -= nx * overlap * ratioA;
+        a.y -= ny * overlap * ratioB;
+        b.x += nx * overlap * ratioA;
+        b.y += ny * overlap * ratioB;
+
+        // ---- 弹性碰撞速度交换 ----
+        const dvx = a.vx - b.vx;
+        const dvy = a.vy - b.vy;
+        const relVn = dvx * nx + dvy * ny;
+
+        // 只在粒子相向而行时处理碰撞
+        if (relVn > 0) {
+          const impulse = (2 * relVn) / totalMass;
+          a.vx -= impulse * b.mass * nx;
+          a.vy -= impulse * b.mass * ny;
+          b.vx += impulse * a.mass * nx;
+          b.vy += impulse * a.mass * ny;
+        }
+      }
+
+      /* ---------- 渲染 ---------- */
+      function render() {
+        if (!ctx) return;
+        // 用半透明清除实现运动拖尾效果
+        ctx.fillStyle = 'rgba(2, 6, 23, 0.25)';
+        ctx.fillRect(0, 0, W, H);
+
+        // 绘制中心引力源（微弱光晕）
+        const gradient = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, 60);
+        gradient.addColorStop(0, 'rgba(6, 182, 212, 0.08)');
+        gradient.addColorStop(1, 'rgba(6, 182, 212, 0)');
+        ctx.fillStyle = gradient;
+        ctx.beginPath();
+        ctx.arc(W/2, H/2, 60, 0, Math.PI * 2);
+        ctx.fill();
+
+        // 绘制粒子
+        for (let i = 0; i < particles.length; i++) {
+          const p = particles[i];
+          // 外发光
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius * 2.2, 0, Math.PI * 2);
+          ctx.fillStyle = p.glowColor;
+          ctx.fill();
+          // 粒子本体
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+          ctx.fillStyle = p.color;
+          ctx.fill();
+          // 高光
+          ctx.beginPath();
+          ctx.arc(p.x - p.radius * 0.25, p.y - p.radius * 0.25, p.radius * 0.35, 0, Math.PI * 2);
+          ctx.fillStyle = 'rgba(255,255,255,0.35)';
+          ctx.fill();
+        }
+      }
+
+      /* ---------- 主循环 ---------- */
+      function loop(timestamp) {
+        updatePhysics();
+        render();
+
+        // FPS 统计
+        fpsCounter++;
+        if (timestamp - fpsTimer >= 1000) {
+          currentFps = fpsCounter;
+          fpsCounter = 0;
+          fpsTimer = timestamp;
+          if (infoFps) infoFps.textContent = currentFps;
+        }
+
+        animId = requestAnimationFrame(loop);
+      }
+
+      /* ---------- 窗口 resize 防抖 ---------- */
+      let resizeTimer = null;
+      function onResize() {
+        if (resizeTimer) cancelAnimationFrame(resizeTimer);
+        resizeTimer = requestAnimationFrame(() => {
+          resizeCanvas();
+        });
+      }
+
+      /* ---------- 模块生命周期 ---------- */
+      function init() {
+        spatialHash = new SpatialHashGrid(CELL_SIZE);
+        resizeCanvas();
+        initParticles();
+      }
+
+      function activate() {
+        resizeCanvas();
+        if (particles.length === 0) initParticles();
+        if (animId === null) {
+          fpsTimer = performance.now();
+          fpsCounter = 0;
+          animId = requestAnimationFrame(loop);
+        }
+        window.addEventListener('resize', onResize);
+      }
+
+      function deactivate() {
+        if (animId !== null) {
+          cancelAnimationFrame(animId);
+          animId = null;
+        }
+        window.removeEventListener('resize', onResize);
+        if (resizeTimer) {
+          cancelAnimationFrame(resizeTimer);
+          resizeTimer = null;
+        }
+      }
+
+      ModuleManager.register(MODULE_NAME, { init, activate, deactivate });
+    })();
+
+    /* ==============================================================
+     * Module 2: 纯原生拖拽看板（Kanban）
+     * - 三列：待办 / 进行中 / 已完成
+     * - HTML5 Drag & Drop API
+     * - 防闪烁 dragenter/dragleave + 挤开占位符
+     * - localStorage 持久化
+     * ============================================================== */
+    (function() {
+      const MODULE_NAME = 'kanban';
+      const STORAGE_KEY = 'kanban_data';
+      const COLUMNS = ['todo', 'doing', 'done'];
+
+      // --- DOM ---
+      const containers = {
+        todo: document.getElementById('kanbanTodo'),
+        doing: document.getElementById('kanbanDoing'),
+        done: document.getElementById('kanbanDone')
+      };
+      const counters = {
+        todo: document.getElementById('todoCount'),
+        doing: document.getElementById('doingCount'),
+        done: document.getElementById('doneCount')
+      };
+      const addBtn = document.getElementById('kanbanAddBtn');
+
+      // --- 数据 ---
+      let data = null;
+      let draggedCard = null;        // 当前拖拽的 DOM 元素
+      let draggedId = null;
+      let dragSourceColumn = null;
+      let dragOverCard = null;       // 被覆盖的卡片
+
+      /* ---------- 默认数据 ---------- */
+      function getDefaultData() {
+        return {
+          todo: [
+            { id: generateId(), title: '设计系统架构', content: '完成整体架构设计文档与 ER 图' },
+            { id: generateId(), title: '实现用户认证', content: '集成 JWT 认证与 OAuth2 模块' },
+            { id: generateId(), title: '编写单元测试', content: '核心模块单元测试覆盖率 > 80%' }
+          ],
+          doing: [
+            { id: generateId(), title: '开发 API 接口', content: '完成 RESTful API 设计与实现' }
+          ],
+          done: [
+            { id: generateId(), title: '需求分析', content: '完成所有业务需求文档评审' }
+          ]
+        };
+      }
+
+      /* ---------- 加载/保存 ---------- */
+      function loadData() {
+        try {
+          const raw = localStorage.getItem(STORAGE_KEY);
+          if (raw) {
+            data = JSON.parse(raw);
+            // 确保所有列都存在
+            COLUMNS.forEach(col => { if (!data[col]) data[col] = []; });
+          } else {
+            data = getDefaultData();
+          }
+        } catch (e) {
+          data = getDefaultData();
+        }
+      }
+
+      function saveData() {
+        try {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+        } catch (e) {}
+      }
+
+      /* ---------- 渲染 ---------- */
+      function render() {
+        COLUMNS.forEach(col => {
+          const container = containers[col];
+          if (!container) return;
+          container.innerHTML = '';
+          data[col].forEach((card, index) => {
+            const el = createCardElement(card, col, index);
+            container.appendChild(el);
+          });
+          // 更新计数
+          if (counters[col]) counters[col].textContent = data[col].length;
+        });
+      }
+
+      /* ---------- 创建卡片 DOM ---------- */
+      function createCardElement(card, column, index) {
+        const div = document.createElement('div');
+        div.className = 'kanban-card rounded-lg px-3 py-2.5 bg-white/8 border border-white/10 hover:border-white/20';
+        div.draggable = true;
+        div.dataset.cardId = card.id;
+        div.dataset.column = column;
+        div.dataset.index = index;
+
+        // 标题
+        const title = document.createElement('div');
+        title.className = 'text-sm font-medium text-white/80 truncate';
+        title.textContent = card.title;
+
+        // 内容
+        const content = document.createElement('div');
+        content.className = 'text-xs text-white/40 mt-1 line-clamp-2';
+        content.textContent = card.content;
+
+        // 删除按钮
+        const delBtn = document.createElement('button');
+        delBtn.className = 'absolute top-1.5 right-1.5 w-5 h-5 flex items-center justify-center rounded text-white/20 hover:text-red-400 hover:bg-red-500/10 transition-all text-xs cursor-pointer';
+        delBtn.innerHTML = '✕';
+        delBtn.title = '删除卡片';
+        delBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          deleteCard(card.id);
+        });
+
+        div.appendChild(title);
+        div.appendChild(content);
+        div.appendChild(delBtn);
+        div.style.position = 'relative';
+
+        // --- Drag 事件 ---
+        div.addEventListener('dragstart', onDragStart);
+        div.addEventListener('dragend', onDragEnd);
+        div.addEventListener('dragenter', onDragEnter);
+        div.addEventListener('dragleave', onDragLeave);
+        div.addEventListener('dragover', onDragOver);
+        div.addEventListener('drop', onDrop);
+
+        return div;
+      }
+
+      /* ---------- 删除卡片 ---------- */
+      function deleteCard(cardId) {
+        for (const col of COLUMNS) {
+          const idx = data[col].findIndex(c => c.id === cardId);
+          if (idx !== -1) {
+            data[col].splice(idx, 1);
+            saveData();
+            render();
+            return;
+          }
+        }
+      }
+
+      /* ---------- 添加卡片 ---------- */
+      function addCard() {
+        const title = prompt('请输入任务标题：');
+        if (!title || !title.trim()) return;
+        const content = prompt('请输入任务描述：') || '';
+        data.todo.unshift({
+          id: generateId(),
+          title: title.trim(),
+          content: content.trim()
+        });
+        saveData();
+        render();
+      }
+
+      /* ========== Drag & Drop 事件处理 ========== */
+
+      function onDragStart(e) {
+        draggedCard = this;
+        draggedId = this.dataset.cardId;
+        dragSourceColumn = this.dataset.column;
+        this.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', draggedId);
+        // 防止默认拖拽缩略图
+        const ghost = document.createElement('div');
+        ghost.style.position = 'absolute';
+        ghost.style.top = '-1000px';
+        document.body.appendChild(ghost);
+        e.dataTransfer.setDragImage(ghost, 0, 0);
+        setTimeout(() => document.body.removeChild(ghost), 0);
+      }
+
+      function onDragEnd(e) {
+        this.classList.remove('dragging');
+        // 清除所有列的 drag-over 状态
+        document.querySelectorAll('.kanban-column.drag-over').forEach(el => el.classList.remove('drag-over'));
+        document.querySelectorAll('.kanban-card.drag-over').forEach(el => el.classList.remove('drag-over'));
+        removeAllPlaceholders();
+        draggedCard = null;
+        draggedId = null;
+        dragSourceColumn = null;
+        dragOverCard = null;
+      }
+
+      function onDragOver(e) {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }
+
+      function onDragEnter(e) {
+        e.preventDefault();
+        // 忽略自身
+        if (this === draggedCard) return;
+        // 使用计数器防闪烁：每进入一个子元素再进入父元素会交替触发
+        this.classList.add('drag-over');
+        dragOverCard = this;
+        showPlaceholderBefore(this);
+      }
+
+      function onDragLeave(e) {
+        // 只有真正离开卡片时才移除
+        if (this.contains(e.relatedTarget)) return;
+        this.classList.remove('drag-over');
+        // 不移除 placeholder，由 drop 或 dragEnd 统一清理
+      }
+
+      function onDrop(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const targetCard = this;
+        const targetColumn = targetCard.dataset.column;
+        const targetId = targetCard.dataset.cardId;
+
+        if (!draggedId || draggedId === targetId) {
+          cleanupDrop();
+          return;
+        }
+
+        // 从源列移除
+        const sourceCol = data[dragSourceColumn];
+        const cardIndex = sourceCol.findIndex(c => c.id === draggedId);
+        if (cardIndex === -1) {
+          cleanupDrop();
+          return;
+        }
+        const [movedCard] = sourceCol.splice(cardIndex, 1);
+
+        // 插入到目标列（在 targetId 之前）
+        const targetCol = data[targetColumn];
+        const targetIndex = targetCol.findIndex(c => c.id === targetId);
+        if (targetIndex !== -1) {
+          targetCol.splice(targetIndex, 0, movedCard);
+        } else {
+          targetCol.push(movedCard);
+        }
+
+        saveData();
+        cleanupDrop();
+        render();
+      }
+
+      function cleanupDrop() {
+        document.querySelectorAll('.kanban-column.drag-over').forEach(el => el.classList.remove('drag-over'));
+        document.querySelectorAll('.kanban-card.drag-over').forEach(el => el.classList.remove('drag-over'));
+        removeAllPlaceholders();
+      }
+
+      /* ---------- 占位符 ---------- */
+      function showPlaceholderBefore(element) {
+        removeAllPlaceholders();
+        const ph = document.createElement('div');
+        ph.className = 'kanban-placeholder show rounded-lg border-2 border-dashed border-cyan-400/40';
+        ph.dataset.placeholder = 'true';
+        element.parentElement.insertBefore(ph, element);
+      }
+
+      function removeAllPlaceholders() {
+        document.querySelectorAll('.kanban-placeholder').forEach(el => el.remove());
+      }
+
+      /* ---------- 列作为投放目标 ---------- */
+      function setupColumnDropZones() {
+        COLUMNS.forEach(col => {
+          const container = containers[col];
+          if (!container) return;
+
+          // 阻止默认打开链接行为
+          container.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+          });
+
+          container.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            container.classList.add('drag-over');
+          });
+
+          container.addEventListener('dragleave', (e) => {
+            if (container.contains(e.relatedTarget)) return;
+            container.classList.remove('drag-over');
+          });
+
+          container.addEventListener('drop', (e) => {
+            e.preventDefault();
+            container.classList.remove('drag-over');
+            if (!draggedId) return;
+
+            // 如果拖到列空白区（没有覆盖卡片），追加到末尾
+            const sourceCol = data[dragSourceColumn];
+            const cardIdx = sourceCol.findIndex(c => c.id === draggedId);
+            if (cardIdx === -1) return;
+            const [movedCard] = sourceCol.splice(cardIdx, 1);
+            data[col].push(movedCard);
+            saveData();
+            cleanupDrop();
+            render();
+          });
+        });
+      }
+
+      /* ---------- 生命周期 ---------- */
+      function init() {
+        loadData();
+        render();
+        setupColumnDropZones();
+        if (addBtn) addBtn.addEventListener('click', addCard);
+      }
+
+      function activate() {
+        // 重新渲染以保证数据最新
+        render();
+      }
+
+      function deactivate() {
+        // 无持续动画，无需操作
+      }
+
+      ModuleManager.register(MODULE_NAME, { init, activate, deactivate });
+    })();
+
+    /* ==============================================================
+     * Module 3: 纯 SVG 实时心电图折线
+     * - 单条 <path> 更新 d 属性
+     * - 50 点窗口 · 100ms 推送
+     * - Y 轴平滑自动缩放（防突变闪烁）
+     * ============================================================== */
+    (function() {
+      const MODULE_NAME = 'chart';
+
+      const svg = document.getElementById('chart-svg');
+      const spanCurrent = document.getElementById('chartCurrent');
+      const spanMax = document.getElementById('chartMax');
+      const spanMin = document.getElementById('chartMin');
+      const yLabels = document.getElementById('chartYLabels');
+
+      // SVG 尺寸
+      let svgW = 800, svgH = 300;
+      const PADDING_TOP = 20;
+      const PADDING_BOTTOM = 25;
+      const PADDING_LEFT = 0;   // 已通过 CSS pl-10 预留
+      const PADDING_RIGHT = 10;
+      const MAX_POINTS = 50;
+
+      // 数据
+      let data = [];
+      let timerId = null;
+      let pathEl = null;
+
+      // Y 轴平滑缩放
+      let currentMin = 0;
+      let currentMax = 100;
+      const SMOOTHING = 0.25;    // 平滑因子，越小越平滑
+
+      // 生成 SVG 路径
+      let plotLeft = 0;
+      let plotRight = 0;
+      let plotTop = 0;
+      let plotBottom = 0;
+      let plotW = 0;
+      let plotH = 0;
+
+      /* ---------- 初始化 SVG ---------- */
+      function initSvg() {
+        // 清除旧内容，只保留 path
+        svg.innerHTML = '';
+        // 创建 path
+        pathEl = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pathEl.setAttribute('fill', 'none');
+        pathEl.setAttribute('stroke', 'url(#chartGradient)');
+        pathEl.setAttribute('stroke-width', '2.5');
+        pathEl.setAttribute('stroke-linecap', 'round');
+        pathEl.setAttribute('stroke-linejoin', 'round');
+        svg.appendChild(pathEl);
+
+        // 渐变定义
+        const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+        const gradient = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+        gradient.setAttribute('id', 'chartGradient');
+        gradient.setAttribute('x1', '0'); gradient.setAttribute('y1', '0');
+        gradient.setAttribute('x2', '1'); gradient.setAttribute('y2', '0');
+        const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop1.setAttribute('offset', '0%');
+        stop1.setAttribute('stop-color', '#06b6d4');
+        const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+        stop2.setAttribute('offset', '100%');
+        stop2.setAttribute('stop-color', '#3b82f6');
+        gradient.appendChild(stop1);
+        gradient.appendChild(stop2);
+        defs.appendChild(gradient);
+        svg.insertBefore(defs, pathEl);
+
+        // 网格线（背景）
+        const gridGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        for (let i = 0; i <= 4; i++) {
+          const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+          const y = PADDING_TOP + (plotH / 4) * i;
+          line.setAttribute('x1', plotLeft);
+          line.setAttribute('y1', y);
+          line.setAttribute('x2', plotRight);
+          line.setAttribute('y2', y);
+          line.setAttribute('stroke', 'rgba(255,255,255,0.05)');
+          line.setAttribute('stroke-width', '1');
+          gridGroup.appendChild(line);
+        }
+        svg.insertBefore(gridGroup, pathEl);
+
+        calcPlotArea();
+        updateViewBox();
+      }
+
+      /* ---------- 计算绘图区域 ---------- */
+      function calcPlotArea() {
+        const rect = svg.getBoundingClientRect();
+        svgW = rect.width || 800;
+        svgH = rect.height || 300;
+        plotLeft = PADDING_LEFT;
+        plotRight = svgW - PADDING_RIGHT;
+        plotTop = PADDING_TOP;
+        plotBottom = svgH - PADDING_BOTTOM;
+        plotW = plotRight - plotLeft;
+        plotH = plotBottom - plotTop;
+      }
+
+      function updateViewBox() {
+        svg.setAttribute('viewBox', `0 0 ${svgW} ${svgH}`);
+        svg.setAttribute('preserveAspectRatio', 'none');
+      }
+
+      /* ---------- 推送新数据 ---------- */
+      function pushData() {
+        const base = data.length > 0 ? data[data.length - 1] : 50;
+        // 随机漫步
+        const change = (Math.random() - 0.48) * 6;
+        let newVal = base + change;
+        // 限制在合理范围
+        newVal = Math.max(10, Math.min(90, newVal));
+        data.push(newVal);
+
+        if (data.length > MAX_POINTS) {
+          data = data.slice(data.length - MAX_POINTS);
+        }
+
+        // 更新信息栏
+        if (spanCurrent) spanCurrent.textContent = newVal.toFixed(1);
+        if (data.length > 0) {
+          const max = Math.max(...data);
+          const min = Math.min(...data);
+          if (spanMax) spanMax.textContent = max.toFixed(1);
+          if (spanMin) spanMin.textContent = min.toFixed(1);
+        }
+
+        updateChart();
+      }
+
+      /* ---------- 更新图表 ---------- */
+      function updateChart() {
+        if (!pathEl || data.length < 2) return;
+
+        calcPlotArea();
+        updateViewBox();
+
+        // ---- Y 轴平滑缩放 ----
+        const rawMin = Math.min(...data);
+        const rawMax = Math.max(...data);
+        const padding = Math.max((rawMax - rawMin) * 0.15, 5);
+
+        const targetMin = rawMin - padding;
+        const targetMax = rawMax + padding;
+
+        // 平滑插值，防止突变
+        if (currentMin === 0 && currentMax === 100) {
+          currentMin = targetMin;
+          currentMax = targetMax;
+        } else {
+          currentMin += (targetMin - currentMin) * SMOOTHING;
+          currentMax += (targetMax - currentMax) * SMOOTHING;
+        }
+
+        // 确保最小值 < 最大值
+        if (currentMin >= currentMax) {
+          currentMax = currentMin + 10;
+        }
+
+        // ---- 构建路径 ----
+        const range = currentMax - currentMin;
+        const stepX = plotW / (MAX_POINTS - 1);
+
+        // 如果数据不足 MAX_POINTS，从右侧开始
+        const offsetX = plotRight - (data.length - 1) * stepX;
+
+        let d = '';
+        for (let i = 0; i < data.length; i++) {
+          const x = offsetX + i * stepX;
+          const y = plotBottom - ((data[i] - currentMin) / range) * plotH;
+          if (i === 0) {
+            d += 'M ' + x.toFixed(1) + ' ' + y.toFixed(1);
+          } else {
+            d += ' L ' + x.toFixed(1) + ' ' + y.toFixed(1);
+          }
+        }
+
+        pathEl.setAttribute('d', d);
+
+        // ---- 更新 Y 轴标签 ----
+        if (yLabels) {
+          const labels = yLabels.querySelectorAll('span');
+          if (labels.length >= 5) {
+            for (let i = 0; i < 5; i++) {
+              const val = currentMax - (range / 4) * i;
+              labels[i].textContent = val.toFixed(0);
+            }
+          }
+        }
+      }
+
+      /* ---------- resize ---------- */
+      let chartResizeTimer = null;
+      function onChartResize() {
+        if (chartResizeTimer) cancelAnimationFrame(chartResizeTimer);
+        chartResizeTimer = requestAnimationFrame(() => {
+          updateChart();
+        });
+      }
+
+      /* ---------- 生命周期 ---------- */
+      function init() {
+        initSvg();
+        // 初始生成一些数据
+        data = [];
+        let val = 50;
+        for (let i = 0; i < 30; i++) {
+          val += (Math.random() - 0.48) * 6;
+          val = Math.max(10, Math.min(90, val));
+          data.push(val);
+        }
+        updateChart();
+      }
+
+      function activate() {
+        if (timerId !== null) clearInterval(timerId);
+        timerId = setInterval(pushData, 100);
+        window.addEventListener('resize', onChartResize);
+        // 立刻更新一次布局
+        calcPlotArea();
+        updateViewBox();
+        updateChart();
+      }
+
+      function deactivate() {
+        if (timerId !== null) {
+          clearInterval(timerId);
+          timerId = null;
+        }
+        window.removeEventListener('resize', onChartResize);
+        if (chartResizeTimer) {
+          cancelAnimationFrame(chartResizeTimer);
+          chartResizeTimer = null;
+        }
+      }
+
+      ModuleManager.register(MODULE_NAME, { init, activate, deactivate });
+    })();
+
+    /* ==============================================================
+     * Module 4: A* 寻路迷宫可视化
+     * - 30×30 网格 · CSS Grid
+     * - A* 算法 · async/await 动画
+     * - 鼠标拖拽画墙 · 防呆处理
+     * ============================================================== */
+    (function() {
+      const MODULE_NAME = 'pathfinding';
+
+      const gridEl = document.getElementById('pfGrid');
+      const statusEl = document.getElementById('pfStatus');
+      const startBtn = document.getElementById('pfStartBtn');
+      const clearBtn = document.getElementById('pfClearBtn');
+      const resetBtn = document.getElementById('pfResetBtn');
+      const modeBtns = document.querySelectorAll('.mode-btn');
+
+      const ROWS = 30;
+      const COLS = 30;
+
+      // 网格数据
+      let cells = [];           // 二维数组 cells[row][col]
+      let startPos = null;     // { row, col }
+      let endPos = null;       // { row, col }
+      let currentMode = 'wall';
+      let isDrawing = false;
+      let drawAction = null;   // 'add' | 'remove' — 鼠标按下时决定
+      let isRunning = false;
+
+      /* ---------- 初始化网格 ---------- */
+      function initGrid() {
+        gridEl.innerHTML = '';
+        gridEl.style.gridTemplateColumns = `repeat(${COLS}, 1fr)`;
+        gridEl.style.gridTemplateRows = `repeat(${ROWS}, 1fr)`;
+
+        cells = [];
+        const fragment = document.createDocumentFragment();
+
+        for (let r = 0; r < ROWS; r++) {
+          cells[r] = [];
+          for (let c = 0; c < COLS; c++) {
+            const div = document.createElement('div');
+            div.className = 'grid-cell';
+            div.dataset.row = r;
+            div.dataset.col = c;
+
+            // --- 鼠标事件 ---
+            div.addEventListener('mousedown', onCellMouseDown);
+            div.addEventListener('mousemove', onCellMouseMove);
+
+            fragment.appendChild(div);
+            cells[r][c] = {
+              el: div,
+              row: r,
+              col: c,
+              isWall: false,
+              isStart: false,
+              isEnd: false,
+              isVisited: false,
+              isPath: false
+            };
+          }
+        }
+
+        gridEl.appendChild(fragment);
+
+        // 默认设置起点和终点
+        setStart(5, 5);
+        setEnd(25, 25);
+      }
+
+      /* ---------- 全局鼠标/窗口事件（防呆） ---------- */
+      function onGlobalMouseUp() {
+        isDrawing = false;
+        drawAction = null;
+      }
+
+      function onWindowBlur() {
+        isDrawing = false;
+        drawAction = null;
+      }
+
+      /* ---------- 单元格鼠标按下 ---------- */
+      function onCellMouseDown(e) {
+        e.preventDefault();
+        if (isRunning) return;
+        const cell = getCellFromEvent(e);
+        if (!cell) return;
+
+        if (currentMode === 'start') {
+          if (!cell.isWall && !cell.isEnd) {
+            clearStart();
+            setStart(cell.row, cell.col);
+          }
+          return;
+        }
+
+        if (currentMode === 'end') {
+          if (!cell.isWall && !cell.isStart) {
+            clearEnd();
+            setEnd(cell.row, cell.col);
+          }
+          return;
+        }
+
+        if (currentMode === 'wall' || currentMode === 'erase') {
+          isDrawing = true;
+          // 鼠标按下时决定是画墙还是擦除
+          const isAdding = currentMode === 'wall';
+          drawAction = isAdding ? 'add' : 'remove';
+          // 清除路径显示
+          clearPathVisuals();
+          // 如果是起点/终点格子不允许画墙
+          if (cell.isStart || cell.isEnd) return;
+          cell.isWall = isAdding;
+          updateCellVisual(cell);
+          return;
+        }
+      }
+
+      /* ---------- 单元格鼠标移动（拖拽画墙） ---------- */
+      function onCellMouseMove(e) {
+        if (!isDrawing || isRunning) return;
+        const cell = getCellFromEvent(e);
+        if (!cell) return;
+        if (cell.isStart || cell.isEnd) return;
+
+        if (drawAction === 'add' && !cell.isWall) {
+          cell.isWall = true;
+          updateCellVisual(cell);
+        } else if (drawAction === 'remove' && cell.isWall) {
+          cell.isWall = false;
+          updateCellVisual(cell);
+        }
+      }
+
+      /* ---------- 获取单元格对象 ---------- */
+      function getCellFromEvent(e) {
+        const el = e.target.closest('.grid-cell');
+        if (!el) return null;
+        const r = parseInt(el.dataset.row);
+        const c = parseInt(el.dataset.col);
+        if (isNaN(r) || isNaN(c)) return null;
+        return cells[r]?.[c];
+      }
+
+      /* ---------- 更新单元格外观 ---------- */
+      function updateCellVisual(cell) {
+        const el = cell.el;
+        el.className = 'grid-cell';
+        if (cell.isWall) el.classList.add('wall');
+        if (cell.isStart) el.classList.add('start');
+        if (cell.isEnd) el.classList.add('end');
+        if (cell.isVisited) el.classList.add('visited');
+        if (cell.isPath) el.classList.add('path');
+      }
+
+      /* ---------- 设置/清除 起点终点 ---------- */
+      function setStart(row, col) {
+        if (!cells[row]?.[col]) return;
+        cells[row][col].isStart = true;
+        startPos = { row, col };
+        updateCellVisual(cells[row][col]);
+      }
+
+      function setEnd(row, col) {
+        if (!cells[row]?.[col]) return;
+        cells[row][col].isEnd = true;
+        endPos = { row, col };
+        updateCellVisual(cells[row][col]);
+      }
+
+      function clearStart() {
+        if (startPos) {
+          cells[startPos.row][startPos.col].isStart = false;
+          updateCellVisual(cells[startPos.row][startPos.col]);
+          startPos = null;
+        }
+      }
+
+      function clearEnd() {
+        if (endPos) {
+          cells[endPos.row][endPos.col].isEnd = false;
+          updateCellVisual(cells[endPos.row][endPos.col]);
+          endPos = null;
+        }
+      }
+
+      /* ---------- 清除路径（保留墙/起点/终点） ---------- */
+      function clearPathVisuals() {
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const cell = cells[r][c];
+            cell.isVisited = false;
+            cell.isPath = false;
+            updateCellVisual(cell);
+          }
+        }
+      }
+
+      /* ---------- 重置网格 ---------- */
+      function resetGrid() {
+        if (isRunning) return;
+        for (let r = 0; r < ROWS; r++) {
+          for (let c = 0; c < COLS; c++) {
+            const cell = cells[r][c];
+            cell.isWall = false;
+            cell.isVisited = false;
+            cell.isPath = false;
+            cell.isStart = false;
+            cell.isEnd = false;
+            updateCellVisual(cell);
+          }
+        }
+        startPos = null;
+        endPos = null;
+        setStart(5, 5);
+        setEnd(25, 25);
+        if (statusEl) statusEl.textContent = '网格已重置';
+      }
+
+      /* ---------- 模式切换 ---------- */
+      function setMode(mode) {
+        currentMode = mode;
+        modeBtns.forEach(btn => {
+          btn.classList.remove('active-mode');
+          const isActive = btn.dataset.mode === mode;
+          if (isActive) {
+            btn.classList.add('active-mode');
+            // 高亮样式
+            if (mode === 'start') { btn.style.borderColor = 'rgba(34,197,94,0.8)'; btn.style.background = 'rgba(34,197,94,0.25)'; }
+            else if (mode === 'end') { btn.style.borderColor = 'rgba(239,68,68,0.8)'; btn.style.background = 'rgba(239,68,68,0.25)'; }
+            else if (mode === 'wall') { btn.style.borderColor = 'rgba(148,163,184,0.8)'; btn.style.background = 'rgba(148,163,184,0.25)'; }
+            else if (mode === 'erase') { btn.style.borderColor = 'rgba(255,255,255,0.4)'; btn.style.background = 'rgba(255,255,255,0.15)'; }
+          } else {
+            // 恢复默认
+            if (btn.dataset.mode === 'start') { btn.style.borderColor = 'rgba(34,197,94,0.5)'; btn.style.background = 'rgba(34,197,94,0.1)'; }
+            else if (btn.dataset.mode === 'end') { btn.style.borderColor = 'rgba(239,68,68,0.5)'; btn.style.background = 'rgba(239,68,68,0.1)'; }
+            else if (btn.dataset.mode === 'wall') { btn.style.borderColor = 'rgba(148,163,184,0.5)'; btn.style.background = 'rgba(148,163,184,0.15)'; }
+            else if (btn.dataset.mode === 'erase') { btn.style.borderColor = 'rgba(255,255,255,0.2)'; btn.style.background = 'rgba(255,255,255,0.05)'; }
+          }
+        });
+      }
+
+      /* ========== A* 算法 ========== */
+      function heuristic(a, b) {
+        // Manhattan 距离
+        return Math.abs(a.row - b.row) + Math.abs(a.col - b.col);
+      }
+
+      function getNeighbors(cell) {
+        const neighbors = [];
+        const { row, col } = cell;
+        if (row > 0) neighbors.push(cells[row - 1][col]);
+        if (row < ROWS - 1) neighbors.push(cells[row + 1][col]);
+        if (col > 0) neighbors.push(cells[row][col - 1]);
+        if (col < COLS - 1) neighbors.push(cells[row][col + 1]);
+        return neighbors;
+      }
+
+      function cellKey(cell) {
+        return cell.row + ',' + cell.col;
+      }
+
+      async function runAStar() {
+        if (isRunning) return;
+        if (!startPos || !endPos) {
+          if (statusEl) statusEl.textContent = '请先设置起点和终点';
+          return;
+        }
+        if (startPos.row === endPos.row && startPos.col === endPos.col) {
+          if (statusEl) statusEl.textContent = '起点和终点不能相同';
+          return;
+        }
+
+        isRunning = true;
+        if (statusEl) statusEl.textContent = '搜索中...';
+        if (startBtn) startBtn.textContent = '搜索中...';
+        clearPathVisuals();
+
+        const startCell = cells[startPos.row][startPos.col];
+        const endCell = cells[endPos.row][endPos.col];
+
+        // 优先队列（简单数组实现，小规模足够）
+        const openSet = [startCell];
+        const closedSet = new Set();
+        const gScore = new Map();
+        const fScore = new Map();
+        const cameFrom = new Map();
+
+        const sk = cellKey(startCell);
+        gScore.set(sk, 0);
+        fScore.set(sk, heuristic(startCell, endCell));
+
+        let found = false;
+
+        while (openSet.length > 0) {
+          // 找 fScore 最小的节点
+          let lowestIdx = 0;
+          for (let i = 1; i < openSet.length; i++) {
+            const k = cellKey(openSet[i]);
+            const lowK = cellKey(openSet[lowestIdx]);
+            const f1 = fScore.get(k) ?? Infinity;
+            const f2 = fScore.get(lowK) ?? Infinity;
+            if (f1 < f2) lowestIdx = i;
+          }
+
+          const current = openSet[lowestIdx];
+          const currentKey = cellKey(current);
+
+          // 到达终点
+          if (current === endCell) {
+            found = true;
+            // 回溯路径
+            let node = current;
+            const path = [];
+            while (cameFrom.has(cellKey(node))) {
+              path.push(node);
+              node = cameFrom.get(cellKey(node));
+            }
+            path.push(startCell);
+            path.reverse();
+
+            // 高亮路径（跳过起点和终点本身）
+            for (let i = 0; i < path.length; i++) {
+              const p = path[i];
+              if (p === startCell || p === endCell) continue;
+              p.isPath = true;
+              updateCellVisual(p);
+              await sleep(15);
+            }
+
+            if (statusEl) statusEl.textContent = `找到路径！长度 ${path.length - 1} 步`;
+            isRunning = false;
+            if (startBtn) startBtn.textContent = '开始寻路';
+            return;
+          }
+
+          // 从 openSet 移除，加入 closedSet
+          openSet.splice(lowestIdx, 1);
+          closedSet.add(currentKey);
+
+          // 标记已访问
+          if (current !== startCell) {
+            current.isVisited = true;
+            updateCellVisual(current);
+          }
+
+          // 每处理一个节点释放一次控制权给浏览器
+          await sleep(8);
+
+          // 探索邻居
+          const neighbors = getNeighbors(current);
+          for (const neighbor of neighbors) {
+            const nk = cellKey(neighbor);
+            if (closedSet.has(nk)) continue;
+            if (neighbor.isWall) continue;
+
+            const tentativeG = (gScore.get(currentKey) ?? Infinity) + 1;
+
+            if (!openSet.includes(neighbor)) {
+              openSet.push(neighbor);
+            } else if (tentativeG >= (gScore.get(nk) ?? Infinity)) {
+              continue;
+            }
+
+            cameFrom.set(nk, current);
+            gScore.set(nk, tentativeG);
+            fScore.set(nk, tentativeG + heuristic(neighbor, endCell));
+          }
+        }
+
+        // 没找到路径
+        if (statusEl) statusEl.textContent = '无法到达终点';
+        isRunning = false;
+        if (startBtn) startBtn.textContent = '开始寻路';
+      }
+
+      /* ---------- 生命周期 ---------- */
+      function init() {
+        initGrid();
+        setMode('wall');
+
+        // 全局事件（防鼠标滑出网格 + 防窗口失焦）
+        document.addEventListener('mouseup', onGlobalMouseUp);
+        window.addEventListener('blur', onWindowBlur);
+
+        // 模式按钮
+        modeBtns.forEach(btn => {
+          btn.addEventListener('click', () => setMode(btn.dataset.mode));
+        });
+
+        // 操作按钮
+        if (startBtn) startBtn.addEventListener('click', runAStar);
+        if (clearBtn) clearBtn.addEventListener('click', clearPathVisuals);
+        if (resetBtn) resetBtn.addEventListener('click', resetGrid);
+      }
+
+      function activate() {
+        // 恢复模式按钮高亮
+        setMode(currentMode);
+      }
+
+      function deactivate() {
+        // 不中断正在运行的算法，但切换到其他标签时暂停视觉效果
+        // 安全处理：强制结束 isDrawing
+        isDrawing = false;
+        drawAction = null;
+      }
+
+      ModuleManager.register(MODULE_NAME, { init, activate, deactivate });
+    })();
+
+    /* ==============================================================
+     * Module 5: 自定义视频播放器 UI
+     * - 隐藏原生控件 · 自定义控制栏
+     * - 可拖拽进度条 · 实时帧预览
+     * - timeupdate 与 拖拽 状态互斥
+     * ============================================================== */
+    (function() {
+      const MODULE_NAME = 'player';
+
+      const video = document.getElementById('playerVideo');
+      const controls = document.getElementById('playerControls');
+      const playBtn = document.getElementById('playBtn');
+      const playIcon = document.getElementById('playIcon');
+      const bigPlayBtn = document.getElementById('bigPlayBtn');
+      const bigPlayOverlay = document.getElementById('bigPlayOverlay');
+      const currentTimeEl = document.getElementById('currentTime');
+      const totalTimeEl = document.getElementById('totalTime');
+      const progressTrack = document.getElementById('progressTrack');
+      const progressFill = document.getElementById('progressFill');
+      const previewTooltip = document.getElementById('previewTooltip');
+      const volumeSlider = document.getElementById('volumeSlider');
+      const speedSelect = document.getElementById('speedSelect');
+      const fullscreenBtn = document.getElementById('fullscreenBtn');
+      const container = document.getElementById('playerContainer');
+
+      let isDragging = false;         // 进度条拖拽中
+      let wasPlaying = false;         // 拖拽前是否在播放
+      let controlsTimer = null;       // 控制栏自动隐藏
+      let isMouseOverControls = false;
+      let isPaused = true;
+
+      /* ---------- 格式化时间 ---------- */
+      function formatTime(s) {
+        if (!isFinite(s) || s < 0) return '00:00';
+        const m = Math.floor(s / 60);
+        const sec = Math.floor(s % 60);
+        return String(m).padStart(2, '0') + ':' + String(sec).padStart(2, '0');
+      }
+
+      /* ---------- 更新播放/暂停图标 ---------- */
+      function updatePlayState() {
+        if (video.paused || video.ended) {
+          isPaused = true;
+          playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+          bigPlayOverlay.style.display = 'flex';
+        } else {
+          isPaused = false;
+          playIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+          bigPlayOverlay.style.display = 'none';
+        }
+      }
+
+      /* ---------- 播放/暂停切换 ---------- */
+      function togglePlay() {
+        if (video.paused || video.ended) {
+          video.play().catch(() => {});
+        } else {
+          video.pause();
+        }
+      }
+
+      /* ---------- 更新进度条 ---------- */
+      function updateProgress() {
+        if (isDragging) return;  // 拖拽时切断 timeupdate 控制
+        if (!video.duration) return;
+        const pct = (video.currentTime / video.duration) * 100;
+        progressFill.style.width = Math.min(pct, 100) + '%';
+        if (currentTimeEl) currentTimeEl.textContent = formatTime(video.currentTime);
+        if (totalTimeEl) totalTimeEl.textContent = formatTime(video.duration);
+      }
+
+      /* ---------- 进度条拖拽 ---------- */
+      function onProgressMouseDown(e) {
+        e.preventDefault();
+        isDragging = true;
+        wasPlaying = !video.paused;
+        video.pause();  // 暂停视频让帧预览稳定
+        progressTrack.classList.add('dragging');
+        updateProgressFromEvent(e);
+        document.addEventListener('mousemove', onDocumentMouseMove);
+        document.addEventListener('mouseup', onDocumentMouseUp);
+      }
+
+      function onDocumentMouseMove(e) {
+        if (!isDragging) return;
+        updateProgressFromEvent(e);
+      }
+
+      function onDocumentMouseUp(e) {
+        if (!isDragging) return;
+        isDragging = false;
+        progressTrack.classList.remove('dragging');
+        document.removeEventListener('mousemove', onDocumentMouseMove);
+        document.removeEventListener('mouseup', onDocumentMouseUp);
+        previewTooltip.style.display = 'none';
+
+        // 拖拽完成，恢复播放状态
+        if (wasPlaying) {
+          video.play().catch(() => {});
+        }
+        updatePlayState();
+      }
+
+      function updateProgressFromEvent(e) {
+        const rect = progressTrack.getBoundingClientRect();
+        let ratio = (e.clientX - rect.left) / rect.width;
+        ratio = Math.max(0, Math.min(1, ratio));
+        const pct = ratio * 100;
+        progressFill.style.width = pct + '%';
+
+        if (video.duration) {
+          const seekTime = ratio * video.duration;
+          video.currentTime = seekTime;  // 实时预览帧
+          if (currentTimeEl) currentTimeEl.textContent = formatTime(seekTime);
+        }
+
+        // 显示预览 tooltip
+        if (previewTooltip) {
+          previewTooltip.style.display = 'block';
+          previewTooltip.style.left = Math.max(0, Math.min(rect.width, e.clientX - rect.left)) + 'px';
+          if (video.duration) {
+            previewTooltip.textContent = formatTime(ratio * video.duration);
+          }
+        }
+      }
+
+      /* ---------- 点击进度条跳转 ---------- */
+      function onProgressClick(e) {
+        if (isDragging) return;
+        const rect = progressTrack.getBoundingClientRect();
+        let ratio = (e.clientX - rect.left) / rect.width;
+        ratio = Math.max(0, Math.min(1, ratio));
+        if (video.duration) {
+          video.currentTime = ratio * video.duration;
+        }
+        updateProgress();
+      }
+
+      /* ---------- 音量 ---------- */
+      function onVolumeChange() {
+        video.volume = parseFloat(volumeSlider.value);
+      }
+
+      /* ---------- 播放速度 ---------- */
+      function onSpeedChange() {
+        video.playbackRate = parseFloat(speedSelect.value);
+      }
+
+      /* ---------- 全屏 ---------- */
+      function toggleFullscreen() {
+        if (!document.fullscreenElement) {
+          container.requestFullscreen?.() || container.webkitRequestFullscreen?.();
+        } else {
+          document.exitFullscreen?.() || document.webkitExitFullscreen?.();
+        }
+      }
+
+      /* ---------- 控制栏自动隐藏 ---------- */
+      function showControls() {
+        controls.classList.remove('hidden-controls');
+        resetControlsTimer();
+      }
+
+      function resetControlsTimer() {
+        if (controlsTimer) clearTimeout(controlsTimer);
+        controlsTimer = setTimeout(() => {
+          if (!video.paused && !isMouseOverControls && !isDragging) {
+            controls.classList.add('hidden-controls');
+          }
+        }, 3000);
+      }
+
+      function onContainerMouseMove() {
+        showControls();
+      }
+
+      function onControlsMouseEnter() {
+        isMouseOverControls = true;
+        if (controlsTimer) clearTimeout(controlsTimer);
+        controls.classList.remove('hidden-controls');
+      }
+
+      function onControlsMouseLeave() {
+        isMouseOverControls = false;
+        if (!video.paused) {
+          resetControlsTimer();
+        }
+      }
+
+      /* ---------- 键盘快捷键 ---------- */
+      function onKeyDown(e) {
+        // 只在播放器标签激活时响应
+        const panel = document.getElementById('panel-player');
+        if (!panel || !panel.classList.contains('active')) return;
+
+        switch (e.code) {
+          case 'Space':
+            e.preventDefault();
+            togglePlay();
+            break;
+          case 'KeyF':
+            toggleFullscreen();
+            break;
+          case 'ArrowLeft':
+            e.preventDefault();
+            video.currentTime = Math.max(0, video.currentTime - 5);
+            updateProgress();
+            break;
+          case 'ArrowRight':
+            e.preventDefault();
+            video.currentTime = Math.min(video.duration, video.currentTime + 5);
+            updateProgress();
+            break;
+          case 'ArrowUp':
+            e.preventDefault();
+            video.volume = Math.min(1, video.volume + 0.1);
+            volumeSlider.value = video.volume;
+            break;
+          case 'ArrowDown':
+            e.preventDefault();
+            video.volume = Math.max(0, video.volume - 0.1);
+            volumeSlider.value = video.volume;
+            break;
+        }
+      }
+
+      /* ---------- 生命周期 ---------- */
+      function init() {
+        // 绑定事件
+        playBtn.addEventListener('click', togglePlay);
+        bigPlayBtn.addEventListener('click', togglePlay);
+        video.addEventListener('play', updatePlayState);
+        video.addEventListener('pause', updatePlayState);
+        video.addEventListener('ended', () => {
+          updatePlayState();
+          showControls();
+        });
+        video.addEventListener('timeupdate', updateProgress);
+        video.addEventListener('loadedmetadata', () => {
+          if (totalTimeEl) totalTimeEl.textContent = formatTime(video.duration);
+          updateProgress();
+        });
+
+        // 进度条
+        progressTrack.addEventListener('mousedown', onProgressMouseDown);
+        progressTrack.addEventListener('click', onProgressClick);
+
+        // 音量
+        volumeSlider.addEventListener('input', onVolumeChange);
+        video.volume = 1;
+
+        // 速度
+        speedSelect.addEventListener('change', onSpeedChange);
+
+        // 全屏
+        fullscreenBtn.addEventListener('click', toggleFullscreen);
+        document.addEventListener('fullscreenchange', () => {
+          fullscreenBtn.innerHTML = document.fullscreenElement
+            ? '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/></svg>'
+            : '<svg class="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z"/></svg>';
+        });
+
+        // 控制栏显隐
+        container.addEventListener('mousemove', onContainerMouseMove);
+        container.addEventListener('mouseenter', showControls);
+        controls.addEventListener('mouseenter', onControlsMouseEnter);
+        controls.addEventListener('mouseleave', onControlsMouseLeave);
+        video.addEventListener('mouseenter', showControls);
+
+        // 键盘
+        document.addEventListener('keydown', onKeyDown);
+
+        // 初始状态
+        updatePlayState();
+        if (totalTimeEl) totalTimeEl.textContent = '00:00';
+        if (currentTimeEl) currentTimeEl.textContent = '00:00';
+      }
+
+      function activate() {
+        showControls();
+      }
+
+      function deactivate() {
+        // 暂停视频以释放资源
+        if (!video.paused) {
+          video.pause();
+          updatePlayState();
+        }
+        if (controlsTimer) {
+          clearTimeout(controlsTimer);
+          controlsTimer = null;
+        }
+        controls.classList.remove('hidden-controls');
+        // 退出全屏
+        if (document.fullscreenElement) {
+          document.exitFullscreen?.().catch(() => {});
+        }
+      }
+
+      ModuleManager.register(MODULE_NAME, { init, activate, deactivate });
+    })();
+
+
+    /* ==============================================================
+     * 启动：注册 Tab 点击 + 初始化所有模块
+     * ============================================================== */
+
+    // Tab 按钮点击切换
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const tabName = this.dataset.tab;
+        if (tabName) ModuleManager.switchTo(tabName);
+      });
+    });
+
+    // 初始化所有模块
+    ModuleManager.init();
+
+    // 当页面关闭/刷新前，暂停视频和动画（可选）
+    window.addEventListener('beforeunload', function() {
+      // 通知所有模块清理（浏览器足够智能，但以防万一）
+    });
+
+    console.log('✅ 前端可视化仪表盘已启动');
+    console.log('📦 模块:', Object.keys(ModuleManager.modules).join(', '));
+    console.log('🔖 当前激活:', ModuleManager.activeName);
+
+  })();
+  </script>
+</body>
+</html>
