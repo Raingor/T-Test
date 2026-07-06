@@ -1,0 +1,1119 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>NovaLab · 前端可视化仪表盘</title>
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style>
+  /* ============ 全局基础样式 ============ */
+  :root {
+    --bg-0: #070b14;
+    --bg-1: #0d1424;
+    --bg-2: #131c33;
+    --line: #1f2b47;
+    --accent: #22d3ee;
+    --accent-2: #a855f7;
+    --text: #e2e8f0;
+    --muted: #7d8aa5;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    margin: 0;
+    font-family: "Inter", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+    background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(168,85,247,.18), transparent 60%),
+      radial-gradient(1000px 500px at 0% 110%, rgba(34,211,238,.15), transparent 55%),
+      var(--bg-0);
+    color: var(--text);
+    overflow: hidden;
+  }
+  /* 自定义滚动条 */
+  ::-webkit-scrollbar { width: 8px; height: 8px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: #25304d; border-radius: 8px; }
+  ::-webkit-scrollbar-thumb:hover { background: #34426a; }
+
+  /* ============ 标签页导航 ============ */
+  .tab-btn {
+    position: relative;
+    transition: color .25s ease, background .25s ease, transform .15s ease;
+  }
+  .tab-btn:hover { transform: translateY(-1px); }
+  .tab-btn.active {
+    color: #fff;
+    background: linear-gradient(180deg, rgba(34,211,238,.16), rgba(168,85,247,.12));
+    border-color: var(--accent) !important;
+  }
+  .tab-btn.active::after {
+    content: "";
+    position: absolute; left: 14%; right: 14%; bottom: -1px; height: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    border-radius: 2px;
+    box-shadow: 0 0 12px var(--accent);
+  }
+
+  /* ============ 看板 (Module 2) ============ */
+  .kanban-col { background: var(--bg-1); border: 1px solid var(--line); border-radius: 14px; }
+  .kanban-card {
+    background: linear-gradient(180deg, var(--bg-2), #101a30);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    cursor: grab;
+    transition: box-shadow .2s ease, transform .12s ease, opacity .2s ease, border-color .2s ease;
+    user-select: none;
+  }
+  .kanban-card:hover { border-color: #2f3e63; box-shadow: 0 6px 20px rgba(0,0,0,.35); }
+  .kanban-card:active { cursor: grabbing; }
+  .kanban-card.dragging { opacity: .35; }
+  /* 拖拽占位提示：仅在真正 hover 的列上显示插入线，避免高频闪烁 */
+  .drop-indicator {
+    height: 3px; margin: 4px 6px; border-radius: 3px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 10px var(--accent);
+  }
+  .kanban-col.drop-active { border-color: var(--accent); box-shadow: inset 0 0 30px rgba(34,211,238,.08); }
+
+  /* ============ 寻路网格 (Module 4) ============ */
+  .cell {
+    width: 100%; aspect-ratio: 1 / 1;
+    border-right: 1px solid #16213c; border-bottom: 1px solid #16213c;
+    transition: background-color .08s linear;
+  }
+  .cell.wall { background: #334155 !important; }
+  .cell.start { background: #22c55e !important; }
+  .cell.end   { background: #ef4444 !important; }
+  .cell.open  { background: #2563eb !important; }
+  .cell.closed{ background: #1e3a8a !important; }
+  .cell.path  { background: #facc15 !important; }
+
+  /* ============ 视频控制 (Module 5) ============ */
+  .progress-track { cursor: pointer; }
+  .progress-fill { background: linear-gradient(90deg, var(--accent), var(--accent-2)); }
+  .progress-knob {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fff; box-shadow: 0 0 8px var(--accent); cursor: pointer;
+  }
+  .vol-track { cursor: pointer; }
+  .icon-btn { transition: transform .12s ease, color .2s ease; }
+  .icon-btn:hover { transform: scale(1.12); color: #fff; }
+
+  /* 模块容器：仅激活的显示，其余隐藏，彻底暂停其生命周期 */
+  .module-pane { display: none; height: 100%; }
+  .module-pane.active { display: flex; }
+
+  .glass {
+    background: rgba(13,20,36,.65);
+    backdrop-filter: blur(10px);
+    border: 1px solid var(--line);
+  }
+</style>
+</head>
+<body>
+<div class="h-screen w-screen flex flex-col">
+
+  <!-- 顶栏 -->
+  <header class="glass flex items-center gap-4 px-6 py-3 border-b border-[var(--line)] shrink-0">
+    <div class="flex items-center gap-2">
+      <div class="w-3 h-3 rounded-full bg-[var(--accent)] shadow-[0_0_12px_var(--accent)]"></div>
+      <div class="w-3 h-3 rounded-full bg-[var(--accent-2)] shadow-[0_0_12px_var(--accent-2)]"></div>
+      <h1 class="ml-2 text-lg font-semibold tracking-wide">NovaLab <span class="text-[var(--muted)] font-normal">/ 前端可视化仪表盘</span></h1>
+    </div>
+    <div id="tabBar" class="flex gap-1 ml-4 flex-1 overflow-x-auto"></div>
+    <div class="text-xs text-[var(--muted)] hidden md:block">kilo-hy3 · 5 模块隔离架构</div>
+  </header>
+
+  <!-- 模块容器 -->
+  <main id="stage" class="flex-1 min-h-0 p-4 md:p-6"></main>
+</div>
+
+<script>
+/* =============================================================================
+ * 仪表盘核心框架
+ * 设计目标：
+ *  1) 每个模块是一个独立对象，拥有 start() / stop() 生命周期。
+ *  2) 切换标签页时，未激活模块调用 stop() 暂停 RAF / 定时器 / 视频，激活模块调用 start()。
+ *  3) 所有状态封装在闭包内，全局不存在互相污染的变量。
+ * =========================================================================== */
+
+const MODULES = {}; // id -> { meta, mount, start, stop, el }
+const stage = document.getElementById('stage');
+const tabBar = document.getElementById('tabBar');
+
+let activeId = null;
+
+/* 注册一个模块 */
+function registerModule(id, title, sub, mountFn) {
+  const el = document.createElement('section');
+  el.className = 'module-pane flex-col';
+  el.dataset.id = id;
+  stage.appendChild(el);
+
+  MODULES[id] = { id, title, sub, el, instance: null, mountFn, start: null, stop: null };
+
+  // 构建标签按钮
+  const btn = document.createElement('button');
+  btn.className = 'tab-btn px-4 py-2 rounded-lg text-sm border border-[var(--line)] text-[var(--muted)] whitespace-nowrap';
+  btn.textContent = title;
+  btn.onclick = () => activate(id);
+  tabBar.appendChild(btn);
+  MODULES[id].btn = btn;
+}
+
+/* 激活指定模块 */
+function activate(id) {
+  if (id === activeId) return;
+  // 暂停旧的
+  if (activeId && MODULES[activeId]) {
+    MODULES[activeId].el.classList.remove('active');
+    MODULES[activeId].btn.classList.remove('active');
+    try { MODULES[activeId].stop && MODULES[activeId].stop(); } catch (e) { console.warn(e); }
+  }
+  activeId = id;
+  const m = MODULES[id];
+  // 懒挂载（首次激活时构建 DOM 与绑定事件，之后仅 start/stop）
+  if (!m.instance) {
+    const api = m.mountFn(m.el);
+    m.start = api.start;
+    m.stop = api.stop;
+    m.instance = api;
+  }
+  m.el.classList.add('active');
+  m.btn.classList.add('active');
+  // 等布局生效后再 start，确保 Canvas 尺寸正确
+  requestAnimationFrame(() => { try { m.start && m.start(); } catch (e) { console.warn(e); } });
+}
+
+/* =============================================================================
+ * 公共工具：节流尺寸读取
+ * =========================================================================== */
+function fitCanvas(canvas) {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  const w = Math.max(1, Math.floor(rect.width));
+  const h = Math.max(1, Math.floor(rect.height));
+  if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
+    canvas.width = w * dpr;
+    canvas.height = h * dpr;
+  }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // 用 CSS 像素坐标绘制，DPR 高清适配
+  return { w, h, dpr, ctx };
+}
+
+/* =============================================================================
+ * 模块 1：Canvas 物理与引力模拟器
+ *  - 500 球，中心引力 + 弹性碰撞
+ *  - 空间哈希网格 (Spatial Hash Grid) 消除 O(n^2)
+ *  - 视网膜 DPR 适配 + 窗口 resize 重设
+ *  - 位置修正 (Position Correction) 防止挤压抖动
+ * =========================================================================== */
+registerModule('m1', '① 引力弹球', 'Canvas · 空间哈希 · 碰撞', (root) => {
+  root.innerHTML = `
+    <div class="flex-1 min-h-0 flex flex-col gap-3">
+      <div class="glass rounded-xl px-4 py-2 flex items-center gap-3 text-sm text-[var(--muted)] shrink-0 flex-wrap">
+        <span class="text-[var(--accent)] font-medium">引力弹球模拟器</span>
+        <span>· 500 粒子</span>
+        <span>· Spatial Hash 碰撞</span>
+        <span>· DPR 高清</span>
+        <button data-act="reset" class="ml-auto px-3 py-1 rounded-md bg-[var(--bg-2)] border border-[var(--line)] hover:border-[var(--accent)]">重置</button>
+        <button data-act="toggle" class="px-3 py-1 rounded-md bg-[var(--bg-2)] border border-[var(--line)] hover:border-[var(--accent)]">暂停</button>
+      </div>
+      <div class="relative flex-1 min-h-0 rounded-xl overflow-hidden border border-[var(--line)] bg-[#050912]">
+        <canvas class="absolute inset-0 w-full h-full block"></canvas>
+        <div class="absolute left-2 bottom-2 text-[10px] text-[var(--muted)] pointer-events-none" data-fps></div>
+      </div>
+    </div>`;
+
+  const canvas = root.querySelector('canvas');
+  const fpsEl = root.querySelector('[data-fps]');
+  const resetBtn = root.querySelector('[data-act="reset"]');
+  const toggleBtn = root.querySelector('[data-act="toggle"]');
+
+  const COUNT = 500;
+  const RADIUS = 4;          // 碰撞半径
+  const CELL = RADIUS * 2.5; // 空间哈希格子大小（约两球直径）
+  let W = 0, H = 0, ctx = null;
+  let particles = [];
+  let raf = null, running = true, lastT = 0, fpsAcc = 0, fpsCnt = 0;
+
+  // 空间哈希网格：以 Map 存 key->索引数组
+  function buildGrid() {
+    const grid = new Map();
+    const cols = Math.ceil(W / CELL);
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      const gx = Math.floor(p.x / CELL);
+      const gy = Math.floor(p.y / CELL);
+      const key = gx + gy * cols;
+      let bucket = grid.get(key);
+      if (!bucket) { bucket = []; grid.set(key, bucket); }
+      bucket.push(i);
+    }
+    return { grid, cols };
+  }
+
+  function resolveCollisions() {
+    const { grid, cols } = buildGrid();
+    // 仅检查相邻 9 格内的粒子，复杂度由 O(n^2) 降为 ~O(n)
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      const gx = Math.floor(p.x / CELL);
+      const gy = Math.floor(p.y / CELL);
+      for (let ox = -1; ox <= 1; ox++) {
+        for (let oy = -1; oy <= 1; oy++) {
+          const key = (gx + ox) + (gy + oy) * cols;
+          const bucket = grid.get(key);
+          if (!bucket) continue;
+          for (let b = 0; b < bucket.length; b++) {
+            const j = bucket[b];
+            if (j <= i) continue; // 每对只处理一次
+            const q = particles[j];
+            let dx = q.x - p.x, dy = q.y - p.y;
+            let dist2 = dx * dx + dy * dy;
+            const minD = RADIUS * 2;
+            if (dist2 < minD * minD && dist2 > 0) {
+              const dist = Math.sqrt(dist2);
+              const nx = dx / dist, ny = dy / dist;
+              // 位置修正：沿法线方向分摊把两球推开，消除重叠挤压抖动
+              const overlap = (minD - dist) / 2;
+              p.x -= nx * overlap; p.y -= ny * overlap;
+              q.x += nx * overlap; q.y += ny * overlap;
+              // 沿法线的相对速度（弹性反射，质量相等）
+              const rvx = q.vx - p.vx, rvy = q.vy - p.vy;
+              const velN = rvx * nx + rvy * ny;
+              if (velN < 0) {
+                const imp = -velN; // 完全弹性 (e=1)
+                p.vx -= imp * nx; p.vy -= imp * ny;
+                q.vx += imp * nx; q.vy += imp * ny;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  function initParticles() {
+    particles = [];
+    for (let i = 0; i < COUNT; i++) {
+      particles.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 1.2,
+        vy: (Math.random() - 0.5) * 1.2,
+        color: `hsl(${Math.floor(Math.random() * 360)}, 80%, 62%)`
+      });
+    }
+  }
+
+  function step() {
+    const cx = W / 2, cy = H / 2;
+    const G = 26; // 引力强度
+    for (const p of particles) {
+      // 中心引力（带轻微阻尼避免能量无限累积）
+      const dx = cx - p.x, dy = cy - p.y;
+      const d2 = dx * dx + dy * dy + 400;
+      const inv = G / d2;
+      p.vx += dx * inv;
+      p.vy += dy * inv;
+      p.vx *= 0.992; p.vy *= 0.992;
+      p.x += p.vx; p.y += p.vy;
+      // 边界反弹
+      if (p.x < RADIUS) { p.x = RADIUS; p.vx = Math.abs(p.vx); }
+      if (p.x > W - RADIUS) { p.x = W - RADIUS; p.vx = -Math.abs(p.vx); }
+      if (p.y < RADIUS) { p.y = RADIUS; p.vy = Math.abs(p.vy); }
+      if (p.y > H - RADIUS) { p.y = H - RADIUS; p.vy = -Math.abs(p.vy); }
+    }
+    resolveCollisions();
+  }
+
+  function draw() {
+    ctx.clearRect(0, 0, W, H);
+    // 引力源光晕
+    const cx = W / 2, cy = H / 2;
+    const g = ctx.createRadialGradient(cx, cy, 0, cx, cy, 60);
+    g.addColorStop(0, 'rgba(168,85,247,.35)');
+    g.addColorStop(1, 'rgba(168,85,247,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(cx, cy, 60, 0, Math.PI * 2); ctx.fill();
+    for (const p of particles) {
+      ctx.beginPath();
+      ctx.fillStyle = p.color;
+      ctx.arc(p.x, p.y, RADIUS, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  function loop(t) {
+    if (!running) return;
+    raf = requestAnimationFrame(loop);
+    const dt = t - lastT; lastT = t;
+    if (dt > 0) { fpsAcc += 1000 / dt; fpsCnt++; }
+    step();
+    draw();
+    if (fpsCnt >= 20) { fpsEl.textContent = `FPS ${Math.round(fpsAcc / fpsCnt)}`; fpsAcc = 0; fpsCnt = 0; }
+  }
+
+  function onResize() {
+    if (!W && !H) return;
+    const r = fitCanvas(canvas);
+    W = r.w; H = r.h; ctx = r.ctx;
+  }
+
+  let resizeTimer = null;
+  const resizeHandler = () => {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(onResize, 80);
+  };
+
+  resetBtn.onclick = () => { if (W) initParticles(); };
+  toggleBtn.onclick = () => {
+    running = !running;
+    toggleBtn.textContent = running ? '暂停' : '继续';
+    if (running) { lastT = performance.now(); raf = requestAnimationFrame(loop); }
+    else { cancelAnimationFrame(raf); raf = null; }
+  };
+
+  return {
+    start() {
+      const r = fitCanvas(canvas);
+      W = r.w; H = r.h; ctx = r.ctx;
+      if (!particles.length) initParticles();
+      running = true; toggleBtn.textContent = '暂停';
+      lastT = performance.now();
+      window.addEventListener('resize', resizeHandler);
+      raf = requestAnimationFrame(loop);
+    },
+    stop() {
+      cancelAnimationFrame(raf); raf = null;
+      window.removeEventListener('resize', resizeHandler);
+    }
+  };
+});
+
+/* =============================================================================
+ * 模块 2：纯原生拖拽看板
+ *  - 原生 HTML5 Drag & Drop，三列，列内排序 + 跨列移动
+ *  - 单一 drop-indicator 占位，dragenter/leave 计数防闪烁
+ *  - 拖拽结束同步内存模型并持久化 localStorage
+ *  - 支持新增 / 编辑 / 删除卡片
+ * =========================================================================== */
+registerModule('m2', '② 拖拽看板', 'Drag&Drop · localStorage', (root) => {
+  root.innerHTML = `
+    <div class="flex-1 min-h-0 flex flex-col gap-3">
+      <div class="glass rounded-xl px-4 py-2 flex items-center gap-3 text-sm text-[var(--muted)] shrink-0 flex-wrap">
+        <span class="text-[var(--accent)] font-medium">任务看板</span>
+        <span>· 原生 DnD</span>
+        <button data-act="add" class="ml-auto px-3 py-1 rounded-md bg-[var(--bg-2)] border border-[var(--line)] hover:border-[var(--accent)]">+ 新建任务</button>
+        <button data-act="clear" class="px-3 py-1 rounded-md bg-[var(--bg-2)] border border-[var(--line)] hover:border-[var(--accent-2)]">清空</button>
+      </div>
+      <div class="flex-1 min-h-0 grid grid-cols-1 md:grid-cols-3 gap-4" data-board></div>
+    </div>`;
+
+  const board = root.querySelector('[data-board]');
+  const addBtn = root.querySelector('[data-act="add"]');
+  const clearBtn = root.querySelector('[data-act="clear"]');
+  const STORE_KEY = 'novalab_kanban_v1';
+
+  const COLUMNS = [
+    { id: 'todo', title: '待办', accent: '#64748b' },
+    { id: 'doing', title: '进行中', accent: '#22d3ee' },
+    { id: 'done', title: '已完成', accent: '#22c55e' },
+  ];
+
+  // 内存数据模型
+  let data = load();
+
+  function load() {
+    try {
+      const raw = localStorage.getItem(STORE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch (e) {}
+    return {
+      todo: [
+        { id: uid(), text: '设计仪表盘架构' },
+        { id: uid(), text: '阅读 5 个项目规格' },
+      ],
+      doing: [{ id: uid(), text: '实现 Canvas 引力模拟' }],
+      done: [{ id: uid(), text: '搭建标签页框架' }],
+    };
+  }
+  function save() { localStorage.setItem(STORE_KEY, JSON.stringify(data)); }
+  function uid() { return 'c' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6); }
+
+  // 当前被拖拽卡片的 id（全局唯一，避免跨模块污染）
+  let dragId = null;
+  let dragFrom = null;
+
+  function findCard(id) {
+    for (const col of COLUMNS) {
+      const idx = data[col.id].findIndex(c => c.id === id);
+      if (idx >= 0) return { colId: col.id, idx };
+    }
+    return null;
+  }
+
+  // 渲染整块看板
+  function render() {
+    board.innerHTML = '';
+    for (const col of COLUMNS) {
+      const colEl = document.createElement('div');
+      colEl.className = 'kanban-col flex flex-col min-h-0';
+      colEl.dataset.col = col.id;
+
+      const head = document.createElement('div');
+      head.className = 'flex items-center gap-2 px-3 py-2 border-b border-[var(--line)]';
+      head.innerHTML = `<span class="w-2 h-2 rounded-full" style="background:${col.accent}"></span>
+        <span class="font-medium text-sm">${col.title}</span>
+        <span class="ml-auto text-xs text-[var(--muted)]">${data[col.id].length}</span>`;
+      colEl.appendChild(head);
+
+      const list = document.createElement('div');
+      list.className = 'flex-1 min-h-0 overflow-y-auto p-2 flex flex-col gap-2';
+      list.dataset.list = col.id;
+
+      data[col.id].forEach(card => list.appendChild(makeCard(card, col.id)));
+
+      // ---- 列级拖拽事件 ----
+      list.addEventListener('dragover', (e) => {
+        e.preventDefault(); // 必须，允许 drop
+        e.dataTransfer.dropEffect = 'move';
+        showIndicator(list, e.clientY);
+      });
+      list.addEventListener('drop', (e) => {
+        e.preventDefault();
+        clearIndicator(list);
+        const afterId = getIndicatorAfterId(list, e.clientY);
+        moveCard(dragId, dragFrom, col.id, afterId);
+      });
+      // 离开整列（进入另一列或空白）时清掉指示器
+      list.addEventListener('dragleave', (e) => {
+        // 仅当真正离开 list 区域时才清理，防止子元素冒泡造成闪烁
+        if (!list.contains(e.relatedTarget)) clearIndicator(list);
+      });
+
+      colEl.appendChild(list);
+      board.appendChild(colEl);
+    }
+  }
+
+  function makeCard(card, colId) {
+    const el = document.createElement('div');
+    el.className = 'kanban-card px-3 py-2 text-sm flex items-start gap-2';
+    el.draggable = true;
+    el.dataset.id = card.id;
+
+    const txt = document.createElement('div');
+    txt.className = 'flex-1 break-words leading-snug';
+    txt.textContent = card.text;
+    el.appendChild(txt);
+
+    // 删除按钮
+    const del = document.createElement('button');
+    del.className = 'text-[var(--muted)] hover:text-red-400 text-xs leading-none shrink-0';
+    del.textContent = '✕';
+    del.onclick = (e) => { e.stopPropagation(); removeCard(card.id); };
+    el.appendChild(del);
+
+    // 双击编辑
+    el.addEventListener('dblclick', () => {
+      const nv = prompt('编辑任务内容：', card.text);
+      if (nv != null && nv.trim()) { card.text = nv.trim(); save(); render(); }
+    });
+
+    // 拖拽源事件
+    el.addEventListener('dragstart', (e) => {
+      dragId = card.id; dragFrom = colId;
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', card.id);
+      requestAnimationFrame(() => el.classList.add('dragging'));
+    });
+    el.addEventListener('dragend', () => {
+      el.classList.remove('dragging');
+      dragId = null; dragFrom = null;
+      document.querySelectorAll('.drop-indicator').forEach(n => n.remove());
+      document.querySelectorAll('.kanban-col').forEach(n => n.classList.remove('drop-active'));
+    });
+    return el;
+  }
+
+  // 计算插入位置：返回应插入到其“之前”的卡片 id（null 表示末尾）
+  function getIndicatorAfterId(list, y) {
+    const cards = [...list.querySelectorAll('.kanban-card:not(.dragging)')];
+    for (const c of cards) {
+      const r = c.getBoundingClientRect();
+      if (y < r.top + r.height / 2) return c.dataset.id;
+    }
+    return null;
+  }
+
+  let indicator = null;
+  function showIndicator(list, y) {
+    if (!indicator) {
+      indicator = document.createElement('div');
+      indicator.className = 'drop-indicator';
+    }
+    const afterId = getIndicatorAfterId(list, y);
+    const ref = afterId ? list.querySelector(`.kanban-card[data-id="${afterId}"]`) : null;
+    list.classList.add('drop-active');
+    if (ref) list.insertBefore(indicator, ref);
+    else list.appendChild(indicator);
+  }
+  function clearIndicator(list) {
+    list.classList.remove('drop-active');
+    if (indicator && indicator.parentNode === list) list.removeChild(indicator);
+  }
+
+  // 移动卡片：从数据模型层面操作，再 render（数据驱动视图，避免 DOM 错乱）
+  function moveCard(id, fromCol, toCol, afterId) {
+    if (!id) return;
+    const found = findCard(id);
+    if (!found) return;
+    const [card] = data[found.colId].splice(found.idx, 1);
+    let arr = data[toCol];
+    let insertAt = arr.length;
+    if (afterId) {
+      const i = arr.findIndex(c => c.id === afterId);
+      if (i >= 0) insertAt = i;
+    }
+    arr.splice(insertAt, 0, card);
+    save();
+    render();
+  }
+
+  function removeCard(id) {
+    const f = findCard(id);
+    if (!f) return;
+    data[f.colId].splice(f.idx, 1);
+    save(); render();
+  }
+
+  addBtn.onclick = () => {
+    const text = prompt('输入新任务内容：', '');
+    if (text != null && text.trim()) {
+      data.todo.unshift({ id: uid(), text: text.trim() });
+      save(); render();
+    }
+  };
+  clearBtn.onclick = () => {
+    if (confirm('确定清空所有任务？')) {
+      data = { todo: [], doing: [], done: [] };
+      save(); render();
+    }
+  };
+
+  return {
+    start() { render(); },
+    stop() { /* 看板无后台循环，仅需保证指示器清理 */ document.querySelectorAll('.drop-indicator').forEach(n => n.remove()); }
+  };
+});
+
+/* =============================================================================
+ * 模块 3：纯 SVG 实时折线（心电图 / 行情）
+ *  - 始终只维护一条 <path>，动态更新 d，绝不新建 DOM
+ *  - 50 点滑动窗口，平滑向左滚动
+ *  - Y 轴极值对当前 50 点平滑自适应（避免突变 / 上下翻转）
+ * =========================================================================== */
+registerModule('m3', '③ 实时折线', 'SVG · 单 Path · 自适应', (root) => {
+  root.innerHTML = `
+    <div class="flex-1 min-h-0 flex flex-col gap-3">
+      <div class="glass rounded-xl px-4 py-2 flex items-center gap-3 text-sm text-[var(--muted)] shrink-0 flex-wrap">
+        <span class="text-[var(--accent)] font-medium">实时行情折线</span>
+        <span>· 100ms / 点</span>
+        <span>· 窗口 50</span>
+        <span data-val class="text-[var(--text)] font-mono"></span>
+        <button data-act="toggle" class="ml-auto px-3 py-1 rounded-md bg-[var(--bg-2)] border border-[var(--line)] hover:border-[var(--accent)]">暂停</button>
+      </div>
+      <div class="relative flex-1 min-h-0 rounded-xl overflow-hidden border border-[var(--line)] bg-[#050912]">
+        <svg class="absolute inset-0 w-full h-full" preserveAspectRatio="none">
+          <defs>
+            <linearGradient id="m3fill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="rgba(34,211,238,.35)"/>
+              <stop offset="100%" stop-color="rgba(34,211,238,0)"/>
+            </linearGradient>
+          </defs>
+          <path data-area fill="url(#m3fill)" stroke="none"></path>
+          <path data-line fill="none" stroke="#22d3ee" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></path>
+          <path data-grid stroke="#16213c" stroke-width="1"></path>
+        </svg>
+        <div data-axis class="absolute right-2 top-1 text-[10px] text-[var(--muted)] font-mono text-right pointer-events-none"></div>
+      </div>
+    </div>`;
+
+  const svg = root.querySelector('svg');
+  const linePath = root.querySelector('[data-line]');
+  const areaPath = root.querySelector('[data-area]');
+  const gridPath = root.querySelector('[data-grid]');
+  const valEl = root.querySelector('[data-val]');
+  const axisEl = root.querySelector('[data-axis]');
+  const toggleBtn = root.querySelector('[data-act="toggle"]');
+
+  const MAX_POINTS = 50;
+  const WINDOW_MS = 100;
+  let points = [];     // {v}
+  let timer = null;
+  let running = true;
+  let baseVal = 50;
+
+  // 平滑自适应的 Y 范围（带缓动，避免整图突变 / 翻转）
+  let viewMin = 0, viewMax = 100;
+
+  function seed() {
+    points = [];
+    let v = 50;
+    for (let i = 0; i < MAX_POINTS; i++) {
+      v += (Math.random() - 0.5) * 8;
+      v = Math.max(0, Math.min(100, v));
+      points.push({ v });
+    }
+    baseVal = v;
+  }
+
+  function pushPoint() {
+    // 行情式随机游走 + 偶发尖峰（心电图感）
+    let delta = (Math.random() - 0.5) * 10;
+    if (Math.random() < 0.05) delta += (Math.random() - 0.5) * 40; // 尖峰
+    baseVal = Math.max(0, Math.min(100, baseVal + delta));
+    points.push({ v: baseVal });
+    if (points.length > MAX_POINTS) points.shift();
+  }
+
+  function render() {
+    const rect = svg.getBoundingClientRect();
+    const W = rect.width, H = rect.height;
+    if (W < 2 || H < 2) return;
+
+    // 计算当前 50 点极值
+    let lo = Infinity, hi = -Infinity;
+    for (const p of points) { if (p.v < lo) lo = p.v; if (p.v > hi) hi = p.v; }
+    if (!isFinite(lo)) { lo = 0; hi = 100; }
+    if (hi - lo < 8) { const m = (hi + lo) / 2; lo = m - 4; hi = m + 4; } // 最小跨度，避免压扁
+    const pad = (hi - lo) * 0.15;
+    const targetMin = lo - pad, targetMax = hi + pad;
+    // 缓动逼近目标范围（关键：平滑，无突变 / 无翻转）
+    viewMin += (targetMin - viewMin) * 0.12;
+    viewMax += (targetMax - viewMax) * 0.12;
+
+    const range = (viewMax - viewMin) || 1;
+    const stepX = W / (MAX_POINTS - 1);
+    const yOf = (v) => H - ((v - viewMin) / range) * H;
+
+    let d = '';
+    for (let i = 0; i < points.length; i++) {
+      const x = i * stepX;
+      const y = yOf(points[i].v);
+      d += (i === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2) + ' ';
+    }
+    linePath.setAttribute('d', d);
+    // 面积填充：沿用折线 + 收口到右下 / 左下
+    areaPath.setAttribute('d', d + `L ${W.toFixed(2)} ${H} L 0 ${H} Z`);
+
+    // 网格（水平 4 条）
+    let g = '';
+    for (let k = 1; k <= 4; k++) {
+      const y = (H / 5) * k;
+      g += `M0 ${y.toFixed(1)} L${W.toFixed(1)} ${y.toFixed(1)} `;
+    }
+    gridPath.setAttribute('d', g);
+
+    // 轴标注
+    axisEl.innerHTML = `${viewMax.toFixed(1)}<br>${((viewMax+viewMin)/2).toFixed(1)}<br>${viewMin.toFixed(1)}`;
+    valEl.textContent = '当前 ' + baseVal.toFixed(1);
+  }
+
+  function tick() {
+    pushPoint();
+    render();
+  }
+
+  toggleBtn.onclick = () => {
+    running = !running;
+    toggleBtn.textContent = running ? '暂停' : '继续';
+    if (running) timer = setInterval(tick, WINDOW_MS);
+    else { clearInterval(timer); timer = null; }
+  };
+
+  return {
+    start() { if (!points.length) seed(); render(); if (running && !timer) timer = setInterval(tick, WINDOW_MS); },
+    stop() { clearInterval(timer); timer = null; }
+  };
+});
+
+/* =============================================================================
+ * 模块 4：A* 寻路可视化
+ *  - 30x30 网格，CSS Grid 布局
+ *  - requestAnimationFrame 分步展开，肉眼可见搜索蔓延（不阻塞主线程）
+ *  - 鼠标拖拽画墙，滑出网格后安全结束绘制状态
+ * =========================================================================== */
+registerModule('m4', '④ A* 寻路', '算法可视化 · 非阻塞', (root) => {
+  root.innerHTML = `
+    <div class="flex-1 min-h-0 flex flex-col gap-3">
+      <div class="glass rounded-xl px-4 py-2 flex items-center gap-3 text-sm text-[var(--muted)] shrink-0 flex-wrap">
+        <span class="text-[var(--accent)] font-medium">A* 寻路可视化</span>
+        <button data-act="run" class="px-3 py-1 rounded-md bg-[var(--bg-2)] border border-[var(--line)] hover:border-[var(--accent)]">开始寻路</button>
+        <button data-act="clear-path" class="px-3 py-1 rounded-md bg-[var(--bg-2)] border border-[var(--line)] hover:border-[var(--accent)]">清除路径</button>
+        <button data-act="reset" class="px-3 py-1 rounded-md bg-[var(--bg-2)] border border-[var(--line)] hover:border-[var(--accent-2)]">重置网格</button>
+        <span data-status class="ml-auto font-mono"></span>
+      </div>
+      <div class="flex-1 min-h-0 flex items-center justify-center">
+        <div data-grid class="grid bg-[#0a1120] border border-[var(--line)] select-none touch-none"
+             style="grid-template-columns: repeat(30, 1fr); width: min(70vh, 100%); aspect-ratio: 1/1;"></div>
+      </div>
+      <div class="text-xs text-[var(--muted)] text-center shrink-0">点击设置起点/终点 · 按住拖拽画墙 · 右键擦除</div>
+    </div>`;
+
+  const grid = root.querySelector('[data-grid]');
+  const statusEl = root.querySelector('[data-status]');
+  const runBtn = root.querySelector('[data-act="run"]');
+  const clearBtn = root.querySelector('[data-act="clear-path"]');
+  const resetBtn = root.querySelector('[data-act="reset"]');
+
+  const N = 30;
+  // 单元格状态：0 空, 1 墙
+  let cells = [];      // DOM 节点二维数组
+  let state = [];      // 状态二维数组
+  let start = { x: 4, y: 10 };
+  let end = { x: 25, y: 19 };
+
+  let painting = false;
+  let paintMode = 1;   // 1 画墙 / 0 擦除
+  let raf = null;
+  let animating = false;
+
+  function idx(x, y) { return y * N + x; }
+
+  function buildGrid() {
+    grid.innerHTML = '';
+    cells = []; state = [];
+    for (let y = 0; y < N; y++) {
+      const row = [], srow = [];
+      for (let x = 0; x < N; x++) {
+        const c = document.createElement('div');
+        c.className = 'cell';
+        c.dataset.x = x; c.dataset.y = y;
+        grid.appendChild(c);
+        row.push(c); srow.push(0);
+      }
+      cells.push(row); state.push(srow);
+    }
+    refreshSpecial();
+  }
+
+  function refreshSpecial() {
+    for (let y = 0; y < N; y++)
+      for (let x = 0; x < N; x++) {
+        const c = cells[y][x];
+        c.classList.remove('start', 'end', 'wall', 'open', 'closed', 'path');
+        if (state[y][x] === 1) c.classList.add('wall');
+      }
+    cells[start.y][start.x].classList.add('start');
+    cells[end.y][end.x].classList.add('end');
+  }
+
+  function clearSearch() {
+    for (let y = 0; y < N; y++)
+      for (let x = 0; x < N; x++) {
+        cells[y][x].classList.remove('open', 'closed', 'path');
+      }
+  }
+
+  // ---- 鼠标交互：画墙 ----
+  grid.addEventListener('contextmenu', e => e.preventDefault());
+  grid.addEventListener('mousedown', (e) => {
+    const t = e.target.closest('.cell');
+    if (!t) return;
+    const x = +t.dataset.x, y = +t.dataset.y;
+    if ((x === start.x && y === start.y) || (x === end.x && y === end.y)) return;
+    painting = true;
+    paintMode = (e.button === 2) ? 0 : (state[y][x] === 1 ? 0 : 1);
+    applyPaint(x, y);
+  });
+  grid.addEventListener('mouseover', (e) => {
+    if (!painting) return;
+    const t = e.target.closest('.cell');
+    if (!t) return;
+    applyPaint(+t.dataset.x, +t.dataset.y);
+  });
+  // 鼠标滑出整个网格区域：安全结束绘制（防呆）
+  grid.addEventListener('mouseleave', () => { painting = false; });
+  // 全局 mouseup 双保险（即便在网格外松开也结束）
+  const globalUp = () => { painting = false; };
+  window.addEventListener('mouseup', globalUp);
+
+  function applyPaint(x, y) {
+    if ((x === start.x && y === start.y) || (x === end.x && y === end.y)) return;
+    state[y][x] = paintMode;
+    cells[y][x].classList.toggle('wall', paintMode === 1);
+    // 画墙时清掉旧搜索痕迹
+    cells[y][x].classList.remove('open', 'closed', 'path');
+  }
+
+  // ---- A* 核心 ----
+  function heuristic(a, b) { return Math.abs(a.x - b.x) + Math.abs(a.y - b.y); }
+
+  function astar() {
+    clearSearch();
+    const open = []; // 简单优先队列（小网格足够）
+    const gScore = Array.from({ length: N }, () => Array(N).fill(Infinity));
+    const fScore = Array.from({ length: N }, () => Array(N).fill(Infinity));
+    const came = Array.from({ length: N }, () => Array(N).fill(null));
+    const inOpen = Array.from({ length: N }, () => Array(N).fill(false));
+    const closed = Array.from({ length: N }, () => Array(N).fill(false));
+
+    gScore[start.y][start.x] = 0;
+    fScore[start.y][start.x] = heuristic(start, end);
+    open.push({ x: start.x, y: start.y, f: fScore[start.y][start.x] });
+    inOpen[start.y][start.x] = true;
+
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+
+    // 用生成器 + rAF 逐步展开，避免 while 同步死锁主线程
+    return (async function run() {
+      let visited = 0;
+      while (open.length) {
+        // 取 f 最小（线性扫描，30x30 可接受）
+        let bi = 0;
+        for (let i = 1; i < open.length; i++) if (open[i].f < open[bi].f) bi = i;
+        const cur = open.splice(bi, 1)[0];
+        inOpen[cur.y][cur.x] = false;
+
+        if (cur.x === end.x && cur.y === end.y) {
+          reconstruct(came);
+          statusEl.textContent = `找到路径 · 访问 ${visited} 节点`;
+          return true;
+        }
+        closed[cur.y][cur.x] = true;
+        if (!(cur.x === start.x && cur.y === start.y))
+          cells[cur.y][cur.x].classList.add('closed');
+        visited++;
+
+        for (const [dx, dy] of dirs) {
+          const nx = cur.x + dx, ny = cur.y + dy;
+          if (nx < 0 || ny < 0 || nx >= N || ny >= N) continue;
+          if (state[ny][nx] === 1 || closed[ny][nx]) continue;
+          const tg = gScore[cur.y][cur.x] + 1;
+          if (tg < gScore[ny][nx]) {
+            came[ny][nx] = { x: cur.x, y: cur.y };
+            gScore[ny][nx] = tg;
+            fScore[ny][nx] = tg + heuristic({ x: nx, y: ny }, end);
+            if (!inOpen[ny][nx]) {
+              open.push({ x: nx, y: ny, f: fScore[ny][nx] });
+              inOpen[ny][nx] = true;
+              if (!(nx === end.x && ny === end.y))
+                cells[ny][nx].classList.add('open');
+            }
+          }
+        }
+
+        // 每帧处理若干步，让搜索可见地蔓延
+        if (visited % 6 === 0) {
+          await new Promise(res => requestAnimationFrame(res));
+        }
+      }
+      statusEl.textContent = '未找到路径';
+      return false;
+    })();
+  }
+
+  function reconstruct(came) {
+    let cur = { x: end.x, y: end.y };
+    while (cur) {
+      if (!(cur.x === start.x && cur.y === start.y) && !(cur.x === end.x && cur.y === end.y))
+        cells[cur.y][cur.x].classList.add('path');
+      cur = came[cur.y][cur.x];
+    }
+  }
+
+  runBtn.onclick = async () => {
+    if (animating) return;
+    animating = true; runBtn.disabled = true;
+    statusEl.textContent = '搜索中…';
+    await astar();
+    animating = false; runBtn.disabled = false;
+  };
+  clearBtn.onclick = () => { if (!animating) clearSearch(); };
+  resetBtn.onclick = () => {
+    if (animating) return;
+    state = Array.from({ length: N }, () => Array(N).fill(0));
+    buildGrid(); statusEl.textContent = '';
+  };
+
+  return {
+    start() { /* 网格为纯 DOM/CSS，无需后台循环；确保尺寸 */ },
+    stop() { painting = false; animating = false; cancelAnimationFrame(raf); raf = null; }
+  };
+});
+
+/* =============================================================================
+ * 模块 5：自定义视频播放器 UI
+ *  - 隐藏原生控件，全手写控制栏
+ *  - 进度条 mousedown 时挂起 timeupdate 对 UI 的控制，避免抢控制权鬼畜跳动
+ *  - 拖拽事件绑定到 window/document，鼠标滑出元素边界依然有效
+ *  - 标准公共 MP4 流
+ * =========================================================================== */
+registerModule('m5', '⑤ 视频播放器', '自定义 UI · 拖拽防抖', (root) => {
+  root.innerHTML = `
+    <div class="flex-1 min-h-0 flex flex-col gap-3">
+      <div class="glass rounded-xl px-4 py-2 flex items-center gap-3 text-sm text-[var(--muted)] shrink-0">
+        <span class="text-[var(--accent)] font-medium">自定义视频播放器</span>
+        <span>· 手写控制栏</span>
+      </div>
+      <div class="flex-1 min-h-0 flex items-center justify-center">
+        <div class="relative w-full max-w-3xl rounded-xl overflow-hidden border border-[var(--line)] bg-black group" data-wrap>
+          <video class="w-full block" data-video preload="metadata" playsinline
+                 src="./task-list/test.mp4"></video>
+          <!-- 中央大播放键（暂停时显示） -->
+          <button data-bigplay class="absolute inset-0 m-auto w-16 h-16 rounded-full bg-black/50 border border-white/30 text-white text-2xl flex items-center justify-center backdrop-blur">▶</button>
+          <!-- 控制栏 -->
+          <div class="absolute left-0 right-0 bottom-0 px-3 py-2 bg-gradient-to-t from-black/80 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" data-controls>
+            <div class="flex items-center gap-2">
+              <button data-play class="icon-btn text-white text-lg w-7">▶</button>
+              <span data-time class="text-xs text-white/90 font-mono w-24">0:00 / 0:00</span>
+              <!-- 进度条 -->
+              <div data-progress class="progress-track relative flex-1 h-3 flex items-center">
+                <div class="absolute left-0 right-0 h-1 rounded-full bg-white/25"></div>
+                <div data-fill class="progress-fill absolute left-0 h-1 rounded-full" style="width:0%"></div>
+                <div data-knob class="progress-knob" style="left:0%"></div>
+              </div>
+              <!-- 音量 -->
+              <div class="flex items-center gap-1 w-24">
+                <button data-mute class="icon-btn text-white text-sm w-6">🔊</button>
+                <div data-vol class="vol-track relative flex-1 h-3 flex items-center">
+                  <div class="absolute left-0 right-0 h-1 rounded-full bg-white/25"></div>
+                  <div data-volfill class="absolute left-0 h-1 rounded-full bg-white" style="width:100%"></div>
+                  <div data-volknob class="progress-knob" style="left:100%"></div>
+                </div>
+              </div>
+              <button data-fs class="icon-btn text-white text-sm w-7">⛶</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+
+  const wrap = root.querySelector('[data-wrap]');
+  const video = root.querySelector('[data-video]');
+  const bigPlay = root.querySelector('[data-bigplay]');
+  const playBtn = root.querySelector('[data-play]');
+  const timeEl = root.querySelector('[data-time]');
+  const progress = root.querySelector('[data-progress]');
+  const fill = root.querySelector('[data-fill]');
+  const knob = root.querySelector('[data-knob]');
+  const muteBtn = root.querySelector('[data-mute]');
+  const vol = root.querySelector('[data-vol]');
+  const volFill = root.querySelector('[data-volfill]');
+  const volKnob = root.querySelector('[data-volknob]');
+  const fsBtn = root.querySelector('[data-fs]');
+
+  // 关键：拖拽进度时挂起 timeupdate 对 UI 的控制
+  let seeking = false;
+
+  function fmt(t) {
+    if (!isFinite(t)) t = 0;
+    const m = Math.floor(t / 60), s = Math.floor(t % 60);
+    return m + ':' + String(s).padStart(2, '0');
+  }
+
+  function updateUI() {
+    if (seeking) return; // 拖拽期间不被 timeupdate 抢控制权
+    const dur = video.duration || 0;
+    const cur = video.currentTime || 0;
+    const pct = dur ? (cur / dur) * 100 : 0;
+    fill.style.width = pct + '%';
+    knob.style.left = pct + '%';
+    timeEl.textContent = fmt(cur) + ' / ' + fmt(dur);
+  }
+
+  // timeupdate 仅同步 UI（受 seeking 守护）
+  video.addEventListener('timeupdate', updateUI);
+  video.addEventListener('loadedmetadata', updateUI);
+
+  function togglePlay() {
+    if (video.paused) video.play(); else video.pause();
+  }
+  video.addEventListener('play', () => { playBtn.textContent = '❚❚'; bigPlay.style.display = 'none'; });
+  video.addEventListener('pause', () => { playBtn.textContent = '▶'; bigPlay.style.display = 'flex'; });
+  video.addEventListener('ended', () => { playBtn.textContent = '▶'; bigPlay.style.display = 'flex'; });
+
+  playBtn.onclick = togglePlay;
+  bigPlay.onclick = togglePlay;
+  video.addEventListener('click', togglePlay);
+
+  // ---- 进度条拖拽：mousedown 挂起，绑定到 window 防边界失效 ----
+  function seekToClientX(clientX) {
+    const r = progress.getBoundingClientRect();
+    let pct = (clientX - r.left) / r.width;
+    pct = Math.max(0, Math.min(1, pct));
+    const dur = video.duration || 0;
+    // 实时预览：直接设置 currentTime（视频会 seek 到对应帧）
+    if (dur) video.currentTime = pct * dur;
+    fill.style.width = (pct * 100) + '%';
+    knob.style.left = (pct * 100) + '%';
+    timeEl.textContent = fmt(pct * dur) + ' / ' + fmt(dur);
+  }
+  progress.addEventListener('mousedown', (e) => {
+    e.preventDefault();
+    seeking = true;            // 挂起 timeupdate 控制
+    seekToClientX(e.clientX);
+  });
+  const onSeekMove = (e) => { if (seeking) seekToClientX(e.clientX); };
+  const onSeekUp = () => {
+    if (!seeking) return;
+    seeking = false;          // 恢复 timeupdate 控制
+    updateUI();
+  };
+  window.addEventListener('mousemove', onSeekMove);
+  window.addEventListener('mouseup', onSeekUp);
+
+  // ---- 音量 ----
+  function volToClientX(clientX) {
+    const r = vol.getBoundingClientRect();
+    let pct = (clientX - r.left) / r.width;
+    pct = Math.max(0, Math.min(1, pct));
+    video.volume = pct;
+    video.muted = pct === 0;
+    volFill.style.width = (pct * 100) + '%';
+    volKnob.style.left = (pct * 100) + '%';
+    muteBtn.textContent = pct === 0 ? '🔇' : '🔊';
+  }
+  vol.addEventListener('mousedown', (e) => { e.preventDefault(); volToClientX(e.clientX); });
+  const onVolMove = (e) => {
+    if (e.buttons & 1) volToClientX(e.clientX); // 按住左键拖动
+  };
+  window.addEventListener('mousemove', onVolMove);
+  muteBtn.onclick = () => {
+    video.muted = !video.muted;
+    if (video.muted) { volFill.style.width = '0%'; volKnob.style.left = '0%'; muteBtn.textContent = '🔇'; }
+    else { const v = video.volume || 1; volFill.style.width = (v*100)+'%'; volKnob.style.left = (v*100)+'%'; muteBtn.textContent = '🔊'; }
+  };
+
+  // ---- 全屏 ----
+  fsBtn.onclick = () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else wrap.requestFullscreen && wrap.requestFullscreen();
+  };
+
+  // 初始化音量显示
+  volFill.style.width = (video.volume * 100) + '%';
+  volKnob.style.left = (video.volume * 100) + '%';
+
+  return {
+    start() { /* 进入时若视频在播放则继续；这里保持暂停，避免后台出声 */ },
+    stop() {
+      // 切走时暂停视频，杜绝后台空转 / 出声
+      if (!video.paused) video.pause();
+      seeking = false;
+    }
+  };
+});
+
+/* =============================================================================
+ * 启动：默认激活模块 1
+ * =========================================================================== */
+activate('m1');
+</script>
+</body>
+</html>
