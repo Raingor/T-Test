@@ -1,0 +1,1789 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>多模块仪表盘 Dashboard</title>
+<!-- Tailwind CSS v4 CDN -->
+<script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+<style>
+/* ==========================================
+   全局重置与自定义样式（补充 Tailwind）
+   ========================================== */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg-dark: #0b0e14;
+  --bg-card: #14181f;
+  --bg-card-hover: #1c222b;
+  --border-color: #2a313c;
+  --text-primary: #e8edf5;
+  --text-secondary: #8892a4;
+  --accent-cyan: #00e5ff;
+  --accent-purple: #7c4dff;
+  --accent-pink: #ff4081;
+  --accent-orange: #ff9100;
+  --accent-green: #00e676;
+  --tab-inactive: #1e2630;
+}
+
+body {
+  background: var(--bg-dark);
+  color: var(--text-primary);
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* 滚动条美化 */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: var(--bg-dark); }
+::-webkit-scrollbar-thumb { background: var(--border-color); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #3a4450; }
+
+/* Tab 按钮样式 */
+.tab-btn {
+  position: relative;
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  padding: 0.75rem 1.25rem;
+  transition: all 0.25s ease;
+  border-radius: 0.5rem 0.5rem 0 0;
+  white-space: nowrap;
+}
+.tab-btn:hover { color: var(--text-primary); background: rgba(255,255,255,0.04); }
+.tab-btn.active {
+  color: var(--accent-cyan);
+  background: var(--bg-card);
+  box-shadow: 0 -2px 0 var(--accent-cyan);
+}
+.tab-btn .tab-icon { display: inline-block; margin-right: 6px; font-size: 1rem; }
+
+/* 模块容器 */
+.module-panel {
+  display: none;
+  animation: fadeIn 0.3s ease;
+}
+.module-panel.active { display: block; }
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 卡片通用 */
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 0.75rem;
+  overflow: hidden;
+}
+
+/* ========== Module 1: Canvas Particle ========== */
+#particle-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: radial-gradient(ellipse at center, #0f1a24, #06090e);
+}
+
+/* ========== Module 2: Kanban ========== */
+.kanban-column {
+  background: rgba(255,255,255,0.03);
+  border-radius: 0.5rem;
+  min-height: 300px;
+  display: flex;
+  flex-direction: column;
+}
+.kanban-column-header {
+  padding: 0.75rem 1rem;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border-bottom: 1px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.kanban-column-header .count-badge {
+  background: var(--border-color);
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 999px;
+  font-weight: 500;
+}
+.kanban-list {
+  flex: 1;
+  padding: 0.5rem;
+  min-height: 200px;
+  transition: background 0.15s;
+}
+.kanban-list.drag-over {
+  background: rgba(0, 229, 255, 0.06);
+}
+.kanban-card {
+  background: var(--bg-card-hover);
+  border: 1px solid var(--border-color);
+  border-radius: 0.375rem;
+  padding: 0.65rem 0.85rem;
+  margin-bottom: 0.4rem;
+  cursor: grab;
+  font-size: 0.82rem;
+  transition: transform 0.15s, box-shadow 0.15s, opacity 0.15s;
+  user-select: none;
+}
+.kanban-card:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.kanban-card.dragging {
+  opacity: 0.4;
+  transform: scale(0.95);
+}
+.kanban-card .card-text {
+  pointer-events: none;
+}
+.kanban-placeholder {
+  border: 2px dashed var(--accent-cyan);
+  border-radius: 0.375rem;
+  height: 2.5rem;
+  margin-bottom: 0.4rem;
+  background: rgba(0, 229, 255, 0.05);
+  transition: all 0.15s;
+}
+.add-card-btn {
+  background: none;
+  border: 1px dashed var(--border-color);
+  color: var(--text-secondary);
+  padding: 0.4rem 0.75rem;
+  border-radius: 0.375rem;
+  cursor: pointer;
+  font-size: 0.78rem;
+  transition: all 0.2s;
+  margin-top: 0.25rem;
+  width: 100%;
+}
+.add-card-btn:hover {
+  border-color: var(--accent-cyan);
+  color: var(--accent-cyan);
+}
+
+/* ========== Module 3: SVG Ticker ========== */
+#svg-ticker-container {
+  width: 100%;
+  height: 100%;
+  position: relative;
+}
+#ticker-svg {
+  width: 100%;
+  height: 100%;
+  background: var(--bg-dark);
+}
+.ticker-info {
+  position: absolute;
+  top: 1rem;
+  left: 1rem;
+  display: flex;
+  gap: 1.5rem;
+  pointer-events: none;
+  z-index: 2;
+}
+.ticker-info-item {
+  display: flex;
+  flex-direction: column;
+}
+.ticker-info-item .label {
+  font-size: 0.7rem;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.ticker-info-item .value {
+  font-size: 1.1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.ticker-info-item .value.up { color: var(--accent-green); }
+.ticker-info-item .value.down { color: var(--accent-pink); }
+.ticker-grid line {
+  stroke: var(--border-color);
+  stroke-opacity: 0.4;
+  stroke-width: 1;
+}
+
+/* ========== Module 4: A* Pathfinding ========== */
+#maze-grid {
+  display: grid;
+  gap: 1px;
+  background: var(--border-color);
+  border: 1px solid var(--border-color);
+  border-radius: 0.25rem;
+  margin: 0 auto;
+  width: fit-content;
+}
+.maze-cell {
+  width: 20px;
+  height: 20px;
+  background: var(--bg-card);
+  transition: background 0.08s;
+  cursor: pointer;
+}
+.maze-cell.wall { background: #3a4450; }
+.maze-cell.start { background: var(--accent-green); }
+.maze-cell.end { background: var(--accent-pink); }
+.maze-cell.visited { background: rgba(0, 229, 255, 0.5); }
+.maze-cell.path { background: #ffd600; }
+.maze-cell.current { background: var(--accent-orange); }
+.maze-cell.wall-drawing { background: #3a4450; }
+
+/* ========== Module 5: Video Player ========== */
+.video-wrapper {
+  position: relative;
+  width: 100%;
+  background: #000;
+  border-radius: 0.5rem;
+  overflow: hidden;
+}
+.video-wrapper video {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  background: #000;
+}
+.custom-controls {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: linear-gradient(transparent, rgba(0,0,0,0.85));
+  padding: 1.5rem 1rem 0.75rem;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+.video-wrapper:hover .custom-controls,
+.video-wrapper.show-controls .custom-controls { opacity: 1; }
+
+.progress-wrap {
+  position: relative;
+  height: 6px;
+  background: rgba(255,255,255,0.15);
+  border-radius: 3px;
+  cursor: pointer;
+  margin-bottom: 0.75rem;
+  touch-action: none;
+}
+.progress-wrap:hover { height: 8px; }
+.progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent-cyan), var(--accent-purple));
+  border-radius: 3px;
+  width: 0%;
+  position: relative;
+  transition: width 0.1s linear;
+}
+.progress-thumb {
+  position: absolute;
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  background: var(--accent-cyan);
+  border-radius: 50%;
+  box-shadow: 0 0 8px rgba(0,229,255,0.6);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.progress-wrap:hover .progress-thumb { opacity: 1; }
+.progress-hover-preview {
+  position: absolute;
+  bottom: 20px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  border: 2px solid var(--accent-cyan);
+  border-radius: 4px;
+  overflow: hidden;
+  display: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+.progress-hover-preview video {
+  display: block;
+  width: 160px;
+  height: 90px;
+  object-fit: cover;
+}
+
+.controls-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+.ctrl-btn {
+  background: none;
+  border: none;
+  color: #fff;
+  cursor: pointer;
+  font-size: 1.2rem;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.15s, color 0.15s;
+  width: 32px;
+  height: 32px;
+  border-radius: 4px;
+}
+.ctrl-btn:hover { color: var(--accent-cyan); transform: scale(1.1); }
+.time-display {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  color: rgba(255,255,255,0.8);
+  min-width: 90px;
+  font-family: monospace;
+}
+.volume-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+.volume-slider {
+  width: 60px;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: rgba(255,255,255,0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.volume-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+}
+.volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  cursor: pointer;
+  border: none;
+}
+</style>
+</head>
+<body>
+
+<!-- ================================================
+     页面主体容器
+     ================================================ -->
+<div id="app" class="max-w-7xl mx-auto px-4 py-6">
+  <!-- 标题区 -->
+  <header class="flex items-center justify-between mb-6">
+    <div>
+      <h1 class="text-2xl font-bold tracking-tight">
+        <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500">多模块仪表盘</span>
+      </h1>
+      <p class="text-sm text-gray-500 mt-1">5 个核心前端模块 · 生命周期隔离 · 高性能渲染</p>
+    </div>
+    <div class="text-xs text-gray-600 font-mono">roo-deepseek</div>
+  </header>
+
+  <!-- 标签页导航 -->
+  <nav class="flex gap-1 border-b border-[var(--border-color)] overflow-x-auto pb-0" id="tab-nav">
+    <button class="tab-btn active" data-tab="tab-particle">
+      <span class="tab-icon">⚛️</span>粒子物理
+    </button>
+    <button class="tab-btn" data-tab="tab-kanban">
+      <span class="tab-icon">📋</span>拖拽看板
+    </button>
+    <button class="tab-btn" data-tab="tab-ticker">
+      <span class="tab-icon">📈</span>实时折线
+    </button>
+    <button class="tab-btn" data-tab="tab-maze">
+      <span class="tab-icon">🧩</span>A* 寻路
+    </button>
+    <button class="tab-btn" data-tab="tab-player">
+      <span class="tab-icon">🎬</span>视频播放器
+    </button>
+  </nav>
+
+  <!-- 内容面板 -->
+  <div class="card mt-0 rounded-t-none border-t-0 p-4 min-h-[600px]">
+    <!-- ========== Module 1: Canvas 粒子物理 ========== -->
+    <div id="tab-particle" class="module-panel active">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-cyan-400">⚛️ Canvas 引力弹球模拟器</h2>
+        <div class="flex gap-2 text-xs text-gray-500">
+          <span>粒子数: <strong id="particle-count">500</strong></span>
+          <span>FPS: <strong id="particle-fps">0</strong></span>
+        </div>
+      </div>
+      <div class="w-full" style="height:520px; border-radius:0.5rem; overflow:hidden; position:relative;">
+        <canvas id="particle-canvas"></canvas>
+      </div>
+    </div>
+
+    <!-- ========== Module 2: 纯原生拖拽看板 ========== -->
+    <div id="tab-kanban" class="module-panel">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-purple-400">📋 类 Trello 任务看板</h2>
+        <button id="kanban-reset" class="text-xs px-3 py-1 rounded border border-[var(--border-color)] text-gray-500 hover:text-red-400 hover:border-red-400 transition cursor-pointer">重置数据</button>
+      </div>
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4" id="kanban-board">
+        <!-- 三列由 JS 动态生成 -->
+      </div>
+    </div>
+
+    <!-- ========== Module 3: 纯 SVG 实时折线 ========== -->
+    <div id="tab-ticker" class="module-panel">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-orange-400">📈 实时股票行情折线</h2>
+        <div class="flex gap-3 text-xs">
+          <span class="text-gray-500">最新: <strong id="ticker-last" class="text-white font-mono">--</strong></span>
+          <span class="text-gray-500">最高: <strong id="ticker-high" class="text-green-400 font-mono">--</strong></span>
+          <span class="text-gray-500">最低: <strong id="ticker-low" class="text-red-400 font-mono">--</strong></span>
+        </div>
+      </div>
+      <div id="svg-ticker-container" style="height:420px;">
+        <svg id="ticker-svg" viewBox="0 0 800 400" preserveAspectRatio="none"></svg>
+      </div>
+    </div>
+
+    <!-- ========== Module 4: A* 寻路 ========== -->
+    <div id="tab-maze" class="module-panel">
+      <div class="flex items-center justify-between mb-3 flex-wrap gap-2">
+        <h2 class="text-lg font-semibold text-pink-400">🧩 A* 寻路可视化</h2>
+        <div class="flex gap-2 flex-wrap">
+          <button id="maze-start-btn" class="text-xs px-4 py-1.5 rounded bg-cyan-500/20 text-cyan-400 border border-cyan-500/40 hover:bg-cyan-500/30 transition cursor-pointer font-medium">▶ 开始寻路</button>
+          <button id="maze-clear-btn" class="text-xs px-4 py-1.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600 transition cursor-pointer font-medium">✕ 清除路径</button>
+          <button id="maze-reset-btn" class="text-xs px-4 py-1.5 rounded bg-gray-700 text-gray-300 hover:bg-gray-600 transition cursor-pointer font-medium">↺ 重置网格</button>
+          <span class="text-xs text-gray-500 self-center ml-2">
+            <span class="inline-block w-3 h-3 rounded bg-green-500 align-middle mr-1"></span>起点
+            <span class="inline-block w-3 h-3 rounded bg-pink-500 align-middle mx-1"></span>终点
+            <span class="inline-block w-3 h-3 rounded bg-[#3a4450] align-middle mx-1"></span>墙壁
+            <span class="inline-block w-3 h-3 rounded bg-cyan-400/50 align-middle mx-1"></span>搜索
+            <span class="inline-block w-3 h-3 rounded bg-yellow-400 align-middle mx-1"></span>路径
+          </span>
+        </div>
+      </div>
+      <div id="maze-grid"></div>
+      <div id="maze-status" class="text-xs text-gray-500 mt-2"></div>
+    </div>
+
+    <!-- ========== Module 5: 自定义视频播放器 ========== -->
+    <div id="tab-player" class="module-panel">
+      <div class="flex items-center justify-between mb-3">
+        <h2 class="text-lg font-semibold text-green-400">🎬 自定义视频播放器</h2>
+      </div>
+      <div class="video-wrapper" id="video-wrapper">
+        <video id="custom-video" preload="auto" playsinline>
+          <source src="./task-list/test.mp4" type="video/mp4">
+          您的浏览器不支持 video 标签。
+        </video>
+
+        <!-- 自定义控制栏 -->
+        <div class="custom-controls">
+          <!-- 进度条 -->
+          <div class="progress-wrap" id="progress-wrap">
+            <div class="progress-fill" id="progress-fill">
+              <div class="progress-thumb" id="progress-thumb"></div>
+            </div>
+            <div class="progress-hover-preview" id="progress-preview">
+              <video id="preview-video" muted></video>
+            </div>
+          </div>
+
+          <!-- 控制按钮行 -->
+          <div class="controls-row">
+            <button class="ctrl-btn" id="play-btn" title="播放/暂停">▶</button>
+            <div class="volume-wrap">
+              <button class="ctrl-btn text-sm" id="mute-btn" title="静音">🔊</button>
+              <input type="range" class="volume-slider" id="volume-slider" min="0" max="1" step="0.01" value="1">
+            </div>
+            <span class="time-display" id="time-display">00:00 / 00:00</span>
+            <div class="flex-1"></div>
+            <button class="ctrl-btn text-sm" id="fullscreen-btn" title="全屏">⛶</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <footer class="text-center text-xs text-gray-700 mt-4">
+    roo-deepseek · 内联全量 · 双击即运行
+  </footer>
+</div>
+
+<!-- ================================================
+     JavaScript — 全部内联
+     ================================================ -->
+<script>
+(function(){
+'use strict';
+
+// ============================================================
+//  全局工具
+// ============================================================
+const $ = (sel, ctx) => (ctx || document).querySelector(sel);
+const $$ = (sel, ctx) => [...(ctx || document).querySelectorAll(sel)];
+
+// ============================================================
+//  Tab 切换 & 模块生命周期管理
+// ============================================================
+const tabNav = $('#tab-nav');
+const panels = {
+  particle: $('#tab-particle'),
+  kanban:   $('#tab-kanban'),
+  ticker:   $('#tab-ticker'),
+  maze:     $('#tab-maze'),
+  player:   $('#tab-player'),
+};
+
+// 每个模块的控制器引用（由各模块注册）
+const moduleControllers = {};
+
+tabNav.addEventListener('click', (e) => {
+  const btn = e.target.closest('.tab-btn');
+  if (!btn) return;
+  const tabId = btn.dataset.tab;
+  if (!tabId) return;
+
+  // 切换 active 类
+  $$('.tab-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+
+  // 切换面板
+  Object.entries(panels).forEach(([key, panel]) => {
+    const isActive = panel.id === tabId;
+    panel.classList.toggle('active', isActive);
+
+    // 生命周期管理
+    const ctrl = moduleControllers[key];
+    if (ctrl) {
+      if (isActive) {
+        ctrl.activate && ctrl.activate();
+      } else {
+        ctrl.deactivate && ctrl.deactivate();
+      }
+    }
+  });
+});
+
+// 辅助：强制激活某个模块
+function activateModule(key) {
+  const btn = tabNav.querySelector(`[data-tab="tab-${key}"]`);
+  if (btn) btn.click();
+}
+
+// ============================================================
+//  Module 1: Canvas 粒子物理与引力模拟
+// ============================================================
+(function() {
+  const KEY = 'particle';
+  const canvas = document.getElementById('particle-canvas');
+  const ctx = canvas.getContext('2d');
+  const fpsEl = document.getElementById('particle-fps');
+  const countEl = document.getElementById('particle-count');
+
+  const PARTICLE_COUNT = 500;
+  const GRAVITY_STRENGTH = 800;
+  const DAMPING = 0.995;
+  const MIN_RADIUS = 3;
+  const MAX_RADIUS = 6;
+
+  let particles = [];
+  let animId = null;
+  let active = false;
+
+  // 空间哈希网格
+  const CELL_SIZE = 60;
+  let grid = {};
+
+  function clearGrid() { grid = {}; }
+  function getCellKey(x, y) {
+    return `${Math.floor(x / CELL_SIZE)},${Math.floor(y / CELL_SIZE)}`;
+  }
+  function insertIntoGrid(p) {
+    const k = getCellKey(p.x, p.y);
+    if (!grid[k]) grid[k] = [];
+    grid[k].push(p);
+  }
+  function getNeighbors(p) {
+    const cx = Math.floor(p.x / CELL_SIZE);
+    const cy = Math.floor(p.y / CELL_SIZE);
+    const neighbors = [];
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        const k = `${cx + dx},${cy + dy}`;
+        const cell = grid[k];
+        if (cell) neighbors.push(...cell);
+      }
+    }
+    return neighbors;
+  }
+
+  // 窗口尺寸 & DPR
+  let W, H, dpr;
+  function resize() {
+    const rect = canvas.parentElement.getBoundingClientRect();
+    dpr = window.devicePixelRatio || 1;
+    W = rect.width;
+    H = rect.height;
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+    canvas.style.width = W + 'px';
+    canvas.style.height = H + 'px';
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.scale(dpr, dpr);
+  }
+
+  // 创建粒子
+  function createParticles() {
+    particles = [];
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
+      const r = MIN_RADIUS + Math.random() * (MAX_RADIUS - MIN_RADIUS);
+      particles.push({
+        x: Math.random() * W,
+        y: Math.random() * H,
+        vx: (Math.random() - 0.5) * 60,
+        vy: (Math.random() - 0.5) * 60,
+        r: r,
+        mass: r * r,
+        color: `hsl(${Math.random() * 360}, 70%, 60%)`,
+      });
+    }
+  }
+
+  // 更新物理
+  function update(dt) {
+    const step = Math.min(dt, 0.033); // 限制最大步长 ~30ms
+    const centerX = W / 2;
+    const centerY = H / 2;
+
+    // 构建空间哈希
+    clearGrid();
+    for (const p of particles) insertIntoGrid(p);
+
+    // 力：引力 + 碰撞
+    for (const p of particles) {
+      // 引力
+      const dx = centerX - p.x;
+      const dy = centerY - p.y;
+      const dist = Math.hypot(dx, dy) + 20;
+      const f = GRAVITY_STRENGTH * p.mass / (dist * dist);
+      const fx = f * dx / dist;
+      const fy = f * dy / dist;
+      p.vx += fx * step;
+      p.vy += fy * step;
+
+      // 阻尼
+      p.vx *= DAMPING;
+      p.vy *= DAMPING;
+
+      // 碰撞 — 仅检查附近粒子
+      const neighbors = getNeighbors(p);
+      for (const other of neighbors) {
+        if (other === p) continue;
+        const dx2 = other.x - p.x;
+        const dy2 = other.y - p.y;
+        const dist2 = Math.hypot(dx2, dy2);
+        const minDist = p.r + other.r;
+        if (dist2 < minDist && dist2 > 0.001) {
+          // 弹性碰撞
+          const nx = dx2 / dist2;
+          const ny = dy2 / dist2;
+          const overlap = (minDist - dist2) * 0.5;
+
+          // 位置修正（防止重叠抖动）
+          p.x -= nx * overlap;
+          p.y -= ny * overlap;
+          other.x += nx * overlap;
+          other.y += ny * overlap;
+
+          // 速度交换（沿法线方向）
+          const relVx = p.vx - other.vx;
+          const relVy = p.vy - other.vy;
+          const relVn = relVx * nx + relVy * ny;
+          if (relVn > 0) continue; // 正在远离
+          const impulse = (2 * relVn) / (p.mass + other.mass);
+          p.vx -= impulse * other.mass * nx;
+          p.vy -= impulse * other.mass * ny;
+          other.vx += impulse * p.mass * nx;
+          other.vy += impulse * p.mass * ny;
+        }
+      }
+
+      // 边界反弹
+      const margin = p.r;
+      if (p.x < margin) { p.x = margin; p.vx = Math.abs(p.vx) * 0.8; }
+      if (p.x > W - margin) { p.x = W - margin; p.vx = -Math.abs(p.vx) * 0.8; }
+      if (p.y < margin) { p.y = margin; p.vy = Math.abs(p.vy) * 0.8; }
+      if (p.y > H - margin) { p.y = H - margin; p.vy = -Math.abs(p.vy) * 0.8; }
+    }
+
+    // 积分位置
+    for (const p of particles) {
+      p.x += p.vx * step;
+      p.y += p.vy * step;
+    }
+  }
+
+  // 渲染
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+
+    // 引力源光晕
+    const grad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, 60);
+    grad.addColorStop(0, 'rgba(0, 229, 255, 0.12)');
+    grad.addColorStop(1, 'rgba(0, 229, 255, 0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, W, H);
+
+    // 粒子
+    for (const p of particles) {
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+      ctx.fillStyle = p.color;
+      ctx.fill();
+      // 高光
+      ctx.beginPath();
+      ctx.arc(p.x - p.r * 0.25, p.y - p.r * 0.25, p.r * 0.35, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fill();
+    }
+  }
+
+  // 主循环
+  let lastTime = 0;
+  let fpsFrames = 0;
+  let fpsTime = 0;
+
+  function loop(time) {
+    if (!active) return;
+
+    const dt = lastTime ? (time - lastTime) / 1000 : 0.016;
+    lastTime = time;
+
+    // FPS 统计
+    fpsFrames++;
+    if (time - fpsTime > 1000) {
+      fpsEl.textContent = fpsFrames;
+      fpsFrames = 0;
+      fpsTime = time;
+    }
+
+    update(dt);
+    render();
+    animId = requestAnimationFrame(loop);
+  }
+
+  // 生命周期
+  const controller = {
+    init() {
+      resize();
+      createParticles();
+      window.addEventListener('resize', () => {
+        resize();
+        // 调整粒子位置到新边界内
+        for (const p of particles) {
+          p.x = Math.min(p.x, W);
+          p.y = Math.min(p.y, H);
+        }
+      });
+    },
+    activate() {
+      if (active) return;
+      active = true;
+      lastTime = 0;
+      animId = requestAnimationFrame(loop);
+    },
+    deactivate() {
+      active = false;
+      if (animId) {
+        cancelAnimationFrame(animId);
+        animId = null;
+      }
+    },
+  };
+
+  controller.init();
+  moduleControllers[KEY] = controller;
+  countEl.textContent = PARTICLE_COUNT;
+})();
+
+
+// ============================================================
+//  Module 2: 纯原生拖拽看板 (Kanban)
+// ============================================================
+(function() {
+  const KEY = 'kanban';
+  const STORAGE_KEY = 'kanban_data_roo';
+  const board = document.getElementById('kanban-board');
+  const resetBtn = document.getElementById('kanban-reset');
+
+  const DEFAULT_DATA = {
+    todo: { title: '待办', items: ['设计系统架构', '编写 API 文档', '搭建 CI/CD 流水线'] },
+    progress: { title: '进行中', items: ['实现用户认证模块', '前端页面重构'] },
+    done: { title: '已完成', items: ['项目初始化', '数据库设计文档'] },
+  };
+
+  let data = {};
+  let dragSrcId = null;  // { column, index }
+  let placeholder = null;
+
+  // 加载/保存
+  function loadData() {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        data = JSON.parse(raw);
+        // 确保结构完整
+        for (const col of ['todo','progress','done']) {
+          if (!data[col]) data[col] = { title: DEFAULT_DATA[col].title, items: [] };
+        }
+      } else {
+        data = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      }
+    } catch(e) {
+      data = JSON.parse(JSON.stringify(DEFAULT_DATA));
+    }
+  }
+  function saveData() {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    updateCounts();
+  }
+  function updateCounts() {
+    for (const col of ['todo','progress','done']) {
+      const badge = board.querySelector(`[data-column="${col}"] .count-badge`);
+      if (badge) badge.textContent = data[col].items.length;
+    }
+  }
+
+  // 渲染看板
+  function renderBoard() {
+    board.innerHTML = '';
+    for (const col of ['todo','progress','done']) {
+      const colData = data[col];
+      const colEl = document.createElement('div');
+      colEl.className = 'kanban-column';
+      colEl.dataset.column = col;
+      colEl.innerHTML = `
+        <div class="kanban-column-header">
+          <span>${colData.title}</span>
+          <span class="count-badge">${colData.items.length}</span>
+        </div>
+        <div class="kanban-list" data-column="${col}"></div>
+        <button class="add-card-btn" data-column="${col}">+ 添加卡片</button>
+      `;
+      board.appendChild(colEl);
+
+      const list = colEl.querySelector('.kanban-list');
+      colData.items.forEach((text, idx) => {
+        list.appendChild(createCard(text, col, idx));
+      });
+
+      // 列拖拽事件
+      list.addEventListener('dragenter', onDragEnter);
+      list.addEventListener('dragleave', onDragLeave);
+      list.addEventListener('dragover', onDragOver);
+      list.addEventListener('drop', onDrop);
+
+      // 添加卡片
+      colEl.querySelector('.add-card-btn').addEventListener('click', () => {
+        const text = prompt('请输入任务描述:');
+        if (text && text.trim()) {
+          data[col].items.push(text.trim());
+          saveData();
+          renderBoard();
+          // 滚动到新卡片
+          const lists = board.querySelectorAll('.kanban-list');
+          const list = board.querySelector(`[data-column="${col}"] .kanban-list`);
+          if (list) list.scrollTop = list.scrollHeight;
+        }
+      });
+    }
+    updateCounts();
+  }
+
+  // 创建卡片
+  function createCard(text, column, index) {
+    const card = document.createElement('div');
+    card.className = 'kanban-card';
+    card.draggable = true;
+    card.dataset.column = column;
+    card.dataset.index = index;
+    card.innerHTML = `<div class="card-text">${escapeHtml(text)}</div>`;
+
+    card.addEventListener('dragstart', (e) => {
+      dragSrcId = { column, index };
+      card.classList.add('dragging');
+      e.dataTransfer.effectAllowed = 'move';
+      e.dataTransfer.setData('text/plain', text);
+    });
+    card.addEventListener('dragend', () => {
+      card.classList.remove('dragging');
+      // 清除所有占位符
+      $$('.kanban-placeholder').forEach(el => el.remove());
+      dragSrcId = null;
+    });
+
+    return card;
+  }
+
+  // 防闪烁：使用计时器
+  let dragEnterTimer = null;
+
+  function onDragEnter(e) {
+    e.preventDefault();
+    const list = e.currentTarget;
+    clearTimeout(dragEnterTimer);
+    list.classList.add('drag-over');
+  }
+
+  function onDragLeave(e) {
+    const list = e.currentTarget;
+    // 只在真正离开列时才移除
+    dragEnterTimer = setTimeout(() => {
+      list.classList.remove('drag-over');
+    }, 50);
+  }
+
+  function onDragOver(e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+
+    const list = e.currentTarget;
+    // 显示占位符
+    showPlaceholder(list, e.clientY);
+  }
+
+  function showPlaceholder(list, mouseY) {
+    // 移除旧占位符
+    const old = list.querySelector('.kanban-placeholder');
+    if (old) old.remove();
+
+    const cards = list.querySelectorAll('.kanban-card:not(.dragging)');
+    let insertBefore = null;
+    for (const card of cards) {
+      const rect = card.getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      if (mouseY < mid) {
+        insertBefore = card;
+        break;
+      }
+    }
+
+    placeholder = document.createElement('div');
+    placeholder.className = 'kanban-placeholder';
+    list.insertBefore(placeholder, insertBefore);
+  }
+
+  function onDrop(e) {
+    e.preventDefault();
+    const list = e.currentTarget;
+    list.classList.remove('drag-over');
+    clearTimeout(dragEnterTimer);
+
+    // 移除占位符
+    $$('.kanban-placeholder').forEach(el => el.remove());
+
+    if (!dragSrcId) return;
+    const targetCol = list.dataset.column;
+    const srcCol = dragSrcId.column;
+    const srcIdx = dragSrcId.index;
+
+    // 计算插入位置
+    const cards = list.querySelectorAll('.kanban-card');
+    let targetIdx = data[targetCol].items.length;
+    for (let i = 0; i < cards.length; i++) {
+      const rect = cards[i].getBoundingClientRect();
+      const mid = rect.top + rect.height / 2;
+      if (e.clientY < mid) {
+        targetIdx = i;
+        break;
+      }
+    }
+
+    // 操作数据模型
+    const item = data[srcCol].items.splice(srcIdx, 1)[0];
+    if (!item) return;
+
+    if (srcCol === targetCol && srcIdx < targetIdx) {
+      targetIdx = Math.max(0, targetIdx - 1);
+    }
+    data[targetCol].items.splice(targetIdx, 0, item);
+    saveData();
+    renderBoard();
+  }
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  // 初始化
+  loadData();
+  renderBoard();
+
+  resetBtn.addEventListener('click', () => {
+    if (confirm('确定重置所有看板数据？')) {
+      data = JSON.parse(JSON.stringify(DEFAULT_DATA));
+      saveData();
+      renderBoard();
+    }
+  });
+
+  moduleControllers[KEY] = {
+    activate() { /* 无需特殊操作 */ },
+    deactivate() { /* 无需特殊操作 */ },
+  };
+})();
+
+
+// ============================================================
+//  Module 3: 纯 SVG 实时心电图折线
+// ============================================================
+(function() {
+  const KEY = 'ticker';
+  const svg = document.getElementById('ticker-svg');
+  const container = document.getElementById('svg-ticker-container');
+  const lastEl = document.getElementById('ticker-last');
+  const highEl = document.getElementById('ticker-high');
+  const lowEl = document.getElementById('ticker-low');
+
+  const MAX_POINTS = 50;
+  const W = 800, H = 400;
+  const PADDING = { top: 30, bottom: 30, left: 10, right: 10 };
+  const chartW = W - PADDING.left - PADDING.right;
+  const chartH = H - PADDING.top - PADDING.bottom;
+
+  let data = [];
+  let intervalId = null;
+  let active = false;
+  let baseValue = 100;
+
+  // 创建网格和坐标轴（静态）
+  function buildGrid() {
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    // 渐变
+    const grad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+    grad.id = 'line-grad';
+    grad.setAttribute('x1', '0'); grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', '1'); grad.setAttribute('y2', '0');
+    const stop1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop1.setAttribute('offset', '0%');
+    stop1.setAttribute('stop-color', '#7c4dff');
+    stop1.setAttribute('stop-opacity', '1');
+    const stop2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    stop2.setAttribute('offset', '100%');
+    stop2.setAttribute('stop-color', '#00e5ff');
+    stop2.setAttribute('stop-opacity', '1');
+    grad.appendChild(stop1);
+    grad.appendChild(stop2);
+    defs.appendChild(grad);
+
+    // 面积渐变
+    const areaGrad = document.createElementNS('http://www.w3.org/2000/svg', 'linearGradient');
+    areaGrad.id = 'area-grad';
+    areaGrad.setAttribute('x1', '0'); areaGrad.setAttribute('y1', '0');
+    areaGrad.setAttribute('x2', '0'); areaGrad.setAttribute('y2', '1');
+    const s1 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s1.setAttribute('offset', '0%');
+    s1.setAttribute('stop-color', '#00e5ff');
+    s1.setAttribute('stop-opacity', '0.25');
+    const s2 = document.createElementNS('http://www.w3.org/2000/svg', 'stop');
+    s2.setAttribute('offset', '100%');
+    s2.setAttribute('stop-color', '#00e5ff');
+    s2.setAttribute('stop-opacity', '0');
+    areaGrad.appendChild(s1);
+    areaGrad.appendChild(s2);
+    defs.appendChild(areaGrad);
+
+    svg.appendChild(defs);
+
+    // 背景网格
+    const gridGroup = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+    gridGroup.setAttribute('class', 'ticker-grid');
+
+    // 水平线 5 条
+    for (let i = 0; i <= 4; i++) {
+      const y = PADDING.top + (chartH / 4) * i;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', PADDING.left);
+      line.setAttribute('y1', y);
+      line.setAttribute('x2', W - PADDING.right);
+      line.setAttribute('y2', y);
+      gridGroup.appendChild(line);
+    }
+
+    // 垂直线 10 条
+    for (let i = 0; i <= 10; i++) {
+      const x = PADDING.left + (chartW / 10) * i;
+      const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+      line.setAttribute('x1', x);
+      line.setAttribute('y1', PADDING.top);
+      line.setAttribute('x2', x);
+      line.setAttribute('y2', H - PADDING.bottom);
+      gridGroup.appendChild(line);
+    }
+    svg.appendChild(gridGroup);
+
+    // 折线（仅一条 path）
+    const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    path.id = 'ticker-path';
+    path.setAttribute('fill', 'none');
+    path.setAttribute('stroke', 'url(#line-grad)');
+    path.setAttribute('stroke-width', '2.5');
+    path.setAttribute('stroke-linejoin', 'round');
+    path.setAttribute('stroke-linecap', 'round');
+    svg.appendChild(path);
+
+    // 面积填充
+    const areaPath = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    areaPath.id = 'ticker-area';
+    areaPath.setAttribute('fill', 'url(#area-grad)');
+    svg.appendChild(areaPath);
+  }
+
+  // 将数据点映射为 SVG 坐标
+  function mapPoint(index, value, minVal, maxVal) {
+    const x = PADDING.left + (index / (MAX_POINTS - 1)) * chartW;
+    const yRange = maxVal - minVal || 1;
+    const y = PADDING.top + chartH - ((value - minVal) / yRange) * chartH;
+    return { x, y };
+  }
+
+  // 更新折线
+  function updateChart() {
+    if (data.length < 2) return;
+
+    const minVal = Math.min(...data) * 0.98;
+    const maxVal = Math.max(...data) * 1.02;
+    const valRange = maxVal - minVal || 1;
+
+    // 更新统计
+    const last = data[data.length - 1];
+    const high = Math.max(...data);
+    const low = Math.min(...data);
+    lastEl.textContent = last.toFixed(2);
+    lastEl.className = last >= data[data.length - 2] ? 'value up' : 'value down';
+    highEl.textContent = high.toFixed(2);
+    lowEl.textContent = low.toFixed(2);
+
+    // 构建路径 d
+    let d = '';
+    let areaD = '';
+    for (let i = 0; i < data.length; i++) {
+      const p = mapPoint(i, data[i], minVal, maxVal);
+      if (i === 0) {
+        d = `M ${p.x} ${p.y}`;
+        areaD = `M ${p.x} ${p.y}`;
+      } else {
+        d += ` L ${p.x} ${p.y}`;
+        areaD += ` L ${p.x} ${p.y}`;
+      }
+    }
+    // 面积闭合
+    const lastP = mapPoint(data.length - 1, data[data.length - 1], minVal, maxVal);
+    const firstP = mapPoint(0, data[0], minVal, maxVal);
+    areaD += ` L ${lastP.x} ${PADDING.top + chartH} L ${firstP.x} ${PADDING.top + chartH} Z`;
+
+    const path = document.getElementById('ticker-path');
+    const areaPath = document.getElementById('ticker-area');
+    if (path) path.setAttribute('d', d);
+    if (areaPath) areaPath.setAttribute('d', areaD);
+  }
+
+  // 生成随机数据点
+  function generatePoint() {
+    const change = (Math.random() - 0.48) * 2.5;
+    baseValue += change;
+    baseValue = Math.max(baseValue, 50);
+    data.push(baseValue);
+    if (data.length > MAX_POINTS) data.shift();
+    updateChart();
+  }
+
+  function init() {
+    buildGrid();
+    // 初始化数据
+    baseValue = 100;
+    data = [];
+    for (let i = 0; i < MAX_POINTS; i++) {
+      baseValue += (Math.random() - 0.48) * 2;
+      data.push(baseValue);
+    }
+    updateChart();
+  }
+
+  init();
+
+  moduleControllers[KEY] = {
+    activate() {
+      if (active) return;
+      active = true;
+      intervalId = setInterval(generatePoint, 100);
+    },
+    deactivate() {
+      active = false;
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
+    },
+  };
+})();
+
+
+// ============================================================
+//  Module 4: A* 寻路可视化
+// ============================================================
+(function() {
+  const KEY = 'maze';
+  const gridEl = document.getElementById('maze-grid');
+  const statusEl = document.getElementById('maze-status');
+  const startBtn = document.getElementById('maze-start-btn');
+  const clearBtn = document.getElementById('maze-clear-btn');
+  const resetBtn = document.getElementById('maze-reset-btn');
+
+  const ROWS = 30, COLS = 30;
+  let cells = [];          // 二维数组，存储每个格子的状态
+  let cellElements = [];   // 二维数组，DOM 元素
+  let start = { row: 1, col: 1 };
+  let end = { row: ROWS - 2, col: COLS - 2 };
+  let isRunning = false;
+  let isDrawingWall = false;
+  let drawMode = false;    // true=画墙, false=擦墙
+
+  // 初始化网格
+  function initGrid() {
+    gridEl.style.gridTemplateColumns = `repeat(${COLS}, 20px)`;
+    gridEl.innerHTML = '';
+    cells = [];
+    cellElements = [];
+
+    for (let r = 0; r < ROWS; r++) {
+      cells[r] = [];
+      cellElements[r] = [];
+      for (let c = 0; c < COLS; c++) {
+        const cell = document.createElement('div');
+        cell.className = 'maze-cell';
+        cell.dataset.row = r;
+        cell.dataset.col = c;
+        gridEl.appendChild(cell);
+
+        cells[r][c] = { wall: false, visited: false, inPath: false, g: 0, f: 0, parent: null };
+        cellElements[r][c] = cell;
+
+        // 事件
+        cell.addEventListener('mousedown', (e) => {
+          if (isRunning) return;
+          e.preventDefault();
+          if (e.shiftKey) {
+            // Shift+点击设置终点
+            setEnd(r, c);
+          } else if (e.ctrlKey || e.metaKey) {
+            // Ctrl/Cmd+点击设置起点
+            setStart(r, c);
+          } else {
+            // 拖拽画墙模式
+            isDrawingWall = true;
+            const isWall = cells[r][c].wall;
+            drawMode = !isWall; // 如果已经是墙则擦除，否则画墙
+            toggleWall(r, c);
+          }
+        });
+        cell.addEventListener('mouseenter', () => {
+          if (isDrawingWall && !isRunning) {
+            toggleWall(r, c);
+          }
+        });
+        cell.addEventListener('mouseup', () => {
+          isDrawingWall = false;
+        });
+      }
+    }
+    // 全局释放鼠标
+    document.addEventListener('mouseup', () => {
+      isDrawingWall = false;
+    });
+
+    // 设置默认起终点
+    setStart(start.row, start.col);
+    setEnd(end.row, end.col);
+
+    statusEl.textContent = '点击网格设置起点(Ctrl+点击) / 终点(Shift+点击) · 拖拽画墙';
+  }
+
+  function setStart(r, c) {
+    if (cells[r][c].wall) return;
+    // 清除旧起点
+    cellElements[start.row][start.col].classList.remove('start');
+    cells[start.row][start.col].isStart = false;
+    start = { row: r, col: c };
+    cells[r][c].isStart = true;
+    cellElements[r][c].classList.add('start');
+  }
+
+  function setEnd(r, c) {
+    if (cells[r][c].wall) return;
+    cellElements[end.row][end.col].classList.remove('end');
+    cells[end.row][end.col].isEnd = false;
+    end = { row: r, col: c };
+    cells[r][c].isEnd = true;
+    cellElements[r][c].classList.add('end');
+  }
+
+  function toggleWall(r, c) {
+    if (cells[r][c].isStart || cells[r][c].isEnd) return;
+    if (isRunning) return;
+    const cell = cells[r][c];
+    if (drawMode && !cell.wall) {
+      cell.wall = true;
+      cellElements[r][c].classList.add('wall');
+    } else if (!drawMode && cell.wall) {
+      cell.wall = false;
+      cellElements[r][c].classList.remove('wall');
+    }
+  }
+
+  // 清除路径（保留墙壁）
+  function clearPath() {
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        cells[r][c].visited = false;
+        cells[r][c].inPath = false;
+        cells[r][c].g = 0;
+        cells[r][c].f = 0;
+        cells[r][c].parent = null;
+        cellElements[r][c].classList.remove('visited', 'path', 'current');
+      }
+    }
+    statusEl.textContent = '路径已清除';
+  }
+
+  // 重置网格
+  function resetGrid() {
+    if (isRunning) return;
+    for (let r = 0; r < ROWS; r++) {
+      for (let c = 0; c < COLS; c++) {
+        cells[r][c] = { wall: false, visited: false, inPath: false, g: 0, f: 0, parent: null };
+        cellElements[r][c].className = 'maze-cell';
+      }
+    }
+    start = { row: 1, col: 1 };
+    end = { row: ROWS - 2, col: COLS - 2 };
+    setStart(start.row, start.col);
+    setEnd(end.row, end.col);
+    statusEl.textContent = '网格已重置';
+  }
+
+  // A* 算法（异步，逐帧渲染）
+  async function startAStar() {
+    if (isRunning) return;
+    clearPath();
+    isRunning = true;
+    startBtn.disabled = true;
+    startBtn.style.opacity = '0.5';
+
+    const openSet = [];
+    const closedSet = new Set();
+
+    // 启发函数（曼哈顿距离）
+    function heuristic(r, c) {
+      return Math.abs(r - end.row) + Math.abs(c - end.col);
+    }
+
+    const startCell = cells[start.row][start.col];
+    startCell.g = 0;
+    startCell.f = heuristic(start.row, start.col);
+    openSet.push({ row: start.row, col: start.col, f: startCell.f });
+
+    let found = false;
+    const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+    while (openSet.length > 0 && !found) {
+      // 找 f 最小的节点
+      openSet.sort((a, b) => a.f - b.f);
+      const current = openSet.shift();
+      const { row: cr, col: cc } = current;
+
+      if (cr === end.row && cc === end.col) {
+        found = true;
+        break;
+      }
+
+      closedSet.add(`${cr},${cc}`);
+      cells[cr][cc].visited = true;
+      cellElements[cr][cc].classList.add('visited');
+
+      // 邻居（上下左右）
+      const neighbors = [
+        { row: cr - 1, col: cc },
+        { row: cr + 1, col: cc },
+        { row: cr, col: cc - 1 },
+        { row: cr, col: cc + 1 },
+      ];
+
+      for (const n of neighbors) {
+        const { row: nr, col: nc } = n;
+        if (nr < 0 || nr >= ROWS || nc < 0 || nc >= COLS) continue;
+        if (cells[nr][nc].wall) continue;
+        if (closedSet.has(`${nr},${nc}`)) continue;
+
+        const tentG = cells[cr][cc].g + 1;
+        const existing = openSet.find(o => o.row === nr && o.col === nc);
+        if (!existing) {
+          cells[nr][nc].g = tentG;
+          cells[nr][nc].f = tentG + heuristic(nr, nc);
+          cells[nr][nc].parent = { row: cr, col: cc };
+          openSet.push({ row: nr, col: nc, f: cells[nr][nc].f });
+        } else if (tentG < cells[nr][nc].g) {
+          cells[nr][nc].g = tentG;
+          cells[nr][nc].f = tentG + heuristic(nr, nc);
+          cells[nr][nc].parent = { row: cr, col: cc };
+          existing.f = cells[nr][nc].f;
+        }
+      }
+
+      // 每帧渲染 ~20 步后让出控制权
+      if (openSet.length % 20 === 0) {
+        statusEl.textContent = `搜索中... 待探索: ${openSet.length} 个节点`;
+        await sleep(30);
+      }
+    }
+
+    if (found) {
+      // 回溯路径
+      let cur = cells[end.row][end.col];
+      const pathCells = [];
+      while (cur && cur.parent) {
+        pathCells.push({ row: cur.parent.row, col: cur.parent.col });
+        cur = cells[cur.parent.row] && cells[cur.parent.col] ? cells[cur.parent.row][cur.parent.col] : null;
+        if (cur && cur.parent && cur.parent.row === start.row && cur.parent.col === start.col) break;
+      }
+
+      // 正向渲染路径
+      for (let i = pathCells.length - 1; i >= 0; i--) {
+        const { row: pr, col: pc } = pathCells[i];
+        if (pr === start.row && pc === start.col) continue;
+        if (pr === end.row && pc === end.col) continue;
+        cells[pr][pc].inPath = true;
+        cellElements[pr][pc].classList.add('path');
+        await sleep(20);
+      }
+      statusEl.textContent = `✅ 路径找到！路径长度: ${pathCells.length} 步`;
+    } else {
+      statusEl.textContent = '❌ 无法到达终点';
+    }
+
+    isRunning = false;
+    startBtn.disabled = false;
+    startBtn.style.opacity = '1';
+  }
+
+  // 挂载事件
+  initGrid();
+
+  startBtn.addEventListener('click', startAStar);
+  clearBtn.addEventListener('click', clearPath);
+  resetBtn.addEventListener('click', resetGrid);
+
+  moduleControllers[KEY] = {
+    activate() { /* 无需特殊操作 */ },
+    deactivate() {
+      // 如果正在运行算法，立即停止
+      isRunning = false;
+      startBtn.disabled = false;
+      startBtn.style.opacity = '1';
+    },
+  };
+})();
+
+
+// ============================================================
+//  Module 5: 自定义视频播放器 UI
+// ============================================================
+(function() {
+  const KEY = 'player';
+  const video = document.getElementById('custom-video');
+  const wrapper = document.getElementById('video-wrapper');
+  const playBtn = document.getElementById('play-btn');
+  const muteBtn = document.getElementById('mute-btn');
+  const volumeSlider = document.getElementById('volume-slider');
+  const timeDisplay = document.getElementById('time-display');
+  const fullscreenBtn = document.getElementById('fullscreen-btn');
+  const progressWrap = document.getElementById('progress-wrap');
+  const progressFill = document.getElementById('progress-fill');
+  const progressThumb = document.getElementById('progress-thumb');
+  const previewEl = document.getElementById('progress-preview');
+  const previewVideo = document.getElementById('preview-video');
+
+  let isDragging = false;       // 进度条是否正在被拖拽
+  let isSeeking = false;        // 是否正在 seek（用于切断 timeupdate）
+  let wasPlaying = false;       // 拖拽前是否在播放
+  let controlsTimer = null;
+
+  // 工具：格式化时间 mm:ss
+  function formatTime(s) {
+    if (!isFinite(s) || isNaN(s)) return '00:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+  }
+
+  // 更新进度条 UI
+  function updateProgress() {
+    if (isDragging) return; // 拖拽时由鼠标控制
+    const pct = video.duration ? (video.currentTime / video.duration * 100) : 0;
+    progressFill.style.width = pct + '%';
+    timeDisplay.textContent = `${formatTime(video.currentTime)} / ${formatTime(video.duration)}`;
+  }
+
+  // 播放/暂停
+  function togglePlay() {
+    if (video.paused) {
+      video.play().catch(() => {});
+      playBtn.textContent = '⏸';
+    } else {
+      video.pause();
+      playBtn.textContent = '▶';
+    }
+  }
+
+  // 静音
+  function toggleMute() {
+    video.muted = !video.muted;
+    muteBtn.textContent = video.muted ? '🔇' : '🔊';
+    volumeSlider.value = video.muted ? 0 : video.volume;
+  }
+
+  // 全屏
+  function toggleFullscreen() {
+    if (!document.fullscreenElement) {
+      if (wrapper.requestFullscreen) {
+        wrapper.requestFullscreen();
+      } else if (wrapper.webkitRequestFullscreen) {
+        wrapper.webkitRequestFullscreen();
+      }
+    } else {
+      if (document.exitFullscreen) {
+        document.exitFullscreen();
+      } else if (document.webkitExitFullscreen) {
+        document.webkitExitFullscreen();
+      }
+    }
+  }
+
+  // 进度条拖拽 — 核心逻辑
+  function getProgressFromEvent(e) {
+    const rect = progressWrap.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    return x / rect.width;
+  }
+
+  function handleProgressStart(e) {
+    e.preventDefault();
+    isDragging = true;
+    wasPlaying = !video.paused;
+    video.pause();
+
+    // 切断 timeupdate 控制 —— 设置标志
+    isSeeking = true;
+
+    const pct = getProgressFromEvent(e);
+    applyProgress(pct);
+
+    // 预览
+    showPreview(e);
+
+    // 将事件绑定到 window/document
+    document.addEventListener('mousemove', handleProgressMove);
+    document.addEventListener('mouseup', handleProgressEnd);
+    document.addEventListener('touchmove', handleProgressMoveTouch, { passive: false });
+    document.addEventListener('touchend', handleProgressEnd);
+  }
+
+  function handleProgressMove(e) {
+    e.preventDefault();
+    if (!isDragging) return;
+    const pct = getProgressFromEvent(e);
+    applyProgress(pct);
+    showPreview(e);
+  }
+
+  function handleProgressMoveTouch(e) {
+    e.preventDefault();
+    if (!isDragging) return;
+    const touch = e.touches[0];
+    const pct = getProgressFromEvent(touch);
+    applyProgress(pct);
+  }
+
+  function handleProgressEnd(e) {
+    if (!isDragging) return;
+    isDragging = false;
+    isSeeking = false;
+
+    // 恢复播放
+    if (wasPlaying) {
+      video.play().catch(() => {});
+      playBtn.textContent = '⏸';
+    }
+
+    hidePreview();
+
+    // 移除临时事件
+    document.removeEventListener('mousemove', handleProgressMove);
+    document.removeEventListener('mouseup', handleProgressEnd);
+    document.removeEventListener('touchmove', handleProgressMoveTouch);
+    document.removeEventListener('touchend', handleProgressEnd);
+  }
+
+  function applyProgress(pct) {
+    pct = Math.max(0, Math.min(1, pct));
+    const time = pct * (video.duration || 0);
+    video.currentTime = time;
+    progressFill.style.width = (pct * 100) + '%';
+    timeDisplay.textContent = `${formatTime(time)} / ${formatTime(video.duration)}`;
+  }
+
+  // 预览帧
+  function showPreview(e) {
+    const rect = progressWrap.getBoundingClientRect();
+    const x = Math.max(0, Math.min(e.clientX - rect.left, rect.width));
+    const pct = x / rect.width;
+    const time = pct * (video.duration || 0);
+
+    previewVideo.currentTime = time;
+    previewEl.style.display = 'block';
+    previewEl.style.left = x + 'px';
+
+    // 边界防溢出
+    const previewRect = previewEl.getBoundingClientRect();
+    if (previewRect.left < 0) previewEl.style.left = '0px';
+    if (previewRect.right > window.innerWidth) previewEl.style.left = (rect.width - previewEl.offsetWidth) + 'px';
+  }
+
+  function hidePreview() {
+    previewEl.style.display = 'none';
+  }
+
+  // 鼠标悬停预览（非拖拽时）
+  function handleProgressHover(e) {
+    if (isDragging) return;
+    showPreview(e);
+  }
+  function handleProgressLeave() {
+    if (!isDragging) hidePreview();
+  }
+
+  // 点击进度条跳转
+  function handleProgressClick(e) {
+    if (isDragging) return;
+    const pct = getProgressFromEvent(e);
+    applyProgress(pct);
+  }
+
+  // 音量
+  volumeSlider.addEventListener('input', () => {
+    video.volume = parseFloat(volumeSlider.value);
+    video.muted = false;
+    muteBtn.textContent = video.volume === 0 ? '🔇' : '🔊';
+  });
+
+  // 隐藏控制栏定时器
+  function resetControlsTimer() {
+    wrapper.classList.add('show-controls');
+    clearTimeout(controlsTimer);
+    controlsTimer = setTimeout(() => {
+      if (!video.paused) wrapper.classList.remove('show-controls');
+    }, 3000);
+  }
+
+  // 事件绑定
+  playBtn.addEventListener('click', togglePlay);
+  muteBtn.addEventListener('click', toggleMute);
+  fullscreenBtn.addEventListener('click', toggleFullscreen);
+  video.addEventListener('play', () => playBtn.textContent = '⏸');
+  video.addEventListener('pause', () => playBtn.textContent = '▶');
+
+  // timeupdate — 仅在非拖拽时更新进度
+  video.addEventListener('timeupdate', () => {
+    if (!isSeeking && !isDragging) {
+      updateProgress();
+    }
+  });
+
+  // 视频元数据加载后更新
+  video.addEventListener('loadedmetadata', () => {
+    updateProgress();
+    // 同步预览视频
+    previewVideo.src = video.querySelector('source').src;
+  });
+
+  // 进度条事件
+  progressWrap.addEventListener('mousedown', handleProgressStart);
+  progressWrap.addEventListener('touchstart', handleProgressStart, { passive: false });
+  progressWrap.addEventListener('click', handleProgressClick);
+  progressWrap.addEventListener('mousemove', handleProgressHover);
+  progressWrap.addEventListener('mouseleave', handleProgressLeave);
+
+  // 显示控制栏
+  wrapper.addEventListener('mousemove', resetControlsTimer);
+  wrapper.addEventListener('mouseenter', resetControlsTimer);
+
+  // 键盘快捷键
+  document.addEventListener('keydown', (e) => {
+    if (panels.player.classList.contains('active')) {
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      }
+    }
+  });
+
+  // 初始状态
+  volumeSlider.value = 1;
+
+  moduleControllers[KEY] = {
+    activate() {
+      // 激活时不自动播放
+    },
+    deactivate() {
+      // 切换到其他标签时暂停视频，释放资源
+      if (!video.paused) {
+        video.pause();
+        playBtn.textContent = '▶';
+      }
+      hidePreview();
+      clearTimeout(controlsTimer);
+      wrapper.classList.remove('show-controls');
+    },
+  };
+})();
+
+
+// ============================================================
+//  启动：默认激活粒子模块（已 active）
+// ============================================================
+// 确保粒子模块的控制器被激活
+if (moduleControllers.particle) {
+  moduleControllers.particle.activate();
+}
+
+console.log('✅ Dashboard 已启动 — roo-deepseek');
+console.log('📦 模块:', Object.keys(moduleControllers).join(', '));
+
+})();
+</script>
+</body>
+</html>
